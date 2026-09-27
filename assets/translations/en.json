@@ -3287,17 +3287,13 @@
           "description": "Open the launcher when typing in umbriel overview; uses a tiny keyboard-focus surface while overview is open",
           "label": "Type to Launch"
         },
-        "window-switcher-mru": {
-          "description": "Order windows in the switcher by most recently used rather than workspace and screen layout",
-          "label": "Most Recently Used Order"
-        },
-        "window-switcher-style": {
-          "description": "Choose the freestanding depth carousel or the boxed compact strip",
-          "label": "Switcher Style"
-        },
         "window-switcher-current-workspace-only": {
           "description": "List only windows on the active workspace; turn off to include windows from every workspace",
           "label": "Current Workspace Only"
+        },
+        "window-switcher-mru": {
+          "description": "Order windows in the switcher by most recently used rather than workspace and screen layout",
+          "label": "Most Recently Used Order"
         },
         "window-switcher-show-all-outputs": {
           "description": "List windows from every monitor; turn off to list only windows on the monitor showing the switcher",
