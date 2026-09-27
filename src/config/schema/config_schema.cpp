@@ -1435,6 +1435,7 @@ namespace noctalia::config::schema {
           field(&ShellConfig::WindowSwitcherConfig::showCount, "show_count"),
           field(&ShellConfig::WindowSwitcherConfig::showAppIcon, "show_app_icon"),
           field(&ShellConfig::WindowSwitcherConfig::showAllOutputs, "show_all_outputs"),
+          field(&ShellConfig::WindowSwitcherConfig::currentWorkspaceOnly, "current_workspace_only"),
       };
       return s;
     }
@@ -1610,6 +1611,7 @@ namespace noctalia::config::schema {
         field(&ShellConfig::polkitAgent, "polkit_agent"),
         enumField(&ShellConfig::passwordMaskStyle, "password_style", kPasswordMaskStyles),
         field(&ShellConfig::settingsShowAdvanced, "settings_show_advanced"),
+        field(&ShellConfig::settingsExpandAllGroups, "settings_expand_all_groups"),
         field(&ShellConfig::settingsWindowTranslucent, "settings_window_translucent"),
         field(&ShellConfig::showLocation, "show_location"),
         field(&ShellConfig::appIconColorize, "app_icon_colorize"),

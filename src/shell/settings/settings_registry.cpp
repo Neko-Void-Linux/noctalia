@@ -1774,6 +1774,11 @@ namespace settings {
         ToggleSetting{cfg.shell.settingsWindowTranslucent}, "settings window background transparency translucent"
     ));
     entries.push_back(makeEntry(
+        SettingsSection::Shell, "general", tr("settings.schema.shell.settings-expand-all-groups.label"),
+        tr("settings.schema.shell.settings-expand-all-groups.description"), {"shell", "settings_expand_all_groups"},
+        ToggleSetting{cfg.shell.settingsExpandAllGroups}, "settings window groups expand collapse expanded"
+    ));
+    entries.push_back(makeEntry(
         SettingsSection::Shell, "general", tr("settings.schema.shell.time-format.label"),
         tr("settings.schema.shell.time-format.description"), {"shell", "time_format"},
         TextSetting{.value = cfg.shell.timeFormat, .placeholder = "{:%H:%M}", .browseFileExtensions = {}},
@@ -2033,6 +2038,14 @@ namespace settings {
         tr("settings.schema.shell.window-switcher-show-all-outputs.description"),
         {"shell", "window_switcher", "show_all_outputs"}, ToggleSetting{cfg.shell.windowSwitcher.showAllOutputs},
         "window switcher alt tab monitor display output screen all current"
+    ));
+    entries.push_back(makeEntry(
+        SettingsSection::Shell, "window-switcher",
+        tr("settings.schema.shell.window-switcher-current-workspace-only.label"),
+        tr("settings.schema.shell.window-switcher-current-workspace-only.description"),
+        {"shell", "window_switcher", "current_workspace_only"},
+        ToggleSetting{cfg.shell.windowSwitcher.currentWorkspaceOnly},
+        "window switcher alt tab workspace current only filter"
     ));
     entries.push_back(makeEntry(
         SettingsSection::Osd, "osd", tr("settings.schema.shell.osd-enabled.label"),
