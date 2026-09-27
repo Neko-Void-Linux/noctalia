@@ -1,0 +1,87 @@
+name: Test branch build
+
+# Compiles the `test` branch and publishes the install tree as a
+# "<VERSION>_1 test" GitHub release for manual validation.
+# The tag uses a `test-` prefix on purpose so the source `Release`
+# workflow (which only accepts tags matching `v*` equal to VERSION)
+# never fires for these builds.
+on:
+  push:
+    branches: [test]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: test-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build test tarball
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+    steps:
+      - name: Install dependencies
+        run: |
+          pacman -Syu --noconfirm --needed \
+            base-devel git meson ninja pkgconf jq \
+            wayland wayland-protocols \
+            libglvnd freetype2 fontconfig noto-fonts \
+            cairo pango harfbuzz \
+            libxkbcommon glib2 \
+            libsecret libsodium \
+            sdbus-cpp libpipewire wireplumber polkit \
+            pam curl libwebp libjxl libsndfile librsvg \
+            libqalculate libxml2 \
+            md4c tomlplusplus libical \
+            nlohmann-json stb \
+            jemalloc just clang
+
+      - uses: actions/checkout@v6
+
+      - name: Configure (release)
+        run: >
+          meson setup build
+          --buildtype=release
+          -Dtests=disabled
+          --prefix=/usr/local
+
+      - name: Build noctalia
+        run: meson compile -C build noctalia
+
+      - name: Package install tree
+        run: |
+          DESTDIR="$PWD/pkg" meson install -C build --no-rebuild
+          tar -czf noctalia-test-x86_64.tar.gz -C pkg usr
+          ls -lh noctalia-test-x86_64.tar.gz
+
+      - name: Publish test release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="$(cat VERSION)"
+          if [[ -z "$VERSION" || "$VERSION" == *$'\n'* ]]; then
+            printf 'VERSION must contain one non-empty line.\n' >&2
+            exit 1
+          fi
+          TAG="test-${VERSION}-1"
+          TITLE="${VERSION}_1 test"
+          API="$GITHUB_API_URL/repos/$GITHUB_REPOSITORY"
+          AUTH="Authorization: Bearer $GITHUB_TOKEN"
+          # Delete previous test release with same tag if re-run.
+          OLD_ID=$(curl -sf -H "$AUTH" "$API/releases/tags/$TAG" | jq -r '.id // empty')
+          if [ -n "$OLD_ID" ]; then
+            curl -sf -X DELETE -H "$AUTH" "$API/releases/$OLD_ID" > /dev/null
+            git push origin ":refs/tags/$TAG" 2>/dev/null || true
+          fi
+          REL_JSON=$(curl -sf -H "$AUTH" -H "Accept: application/vnd.github+json" \
+            -d "{\"tag_name\":\"$TAG\",\"name\":\"$TITLE\",\"body\":\"Test build of the \`test\` branch ($GITHUB_SHA). Unpack at / . This is a validation build, not a stable release.\"}" \
+            "$API/releases")
+          UPLOAD_URL=$(echo "$REL_JSON" | jq -r '.upload_url' | sed 's/{.*//')
+          curl -sf -H "$AUTH" -H "Content-Type: application/gzip" \
+            --data-binary @noctalia-test-x86_64.tar.gz \
+            "$UPLOAD_URL?name=noctalia-test-x86_64.tar.gz"
+          echo "Published $TITLE ($TAG)"
