@@ -139,6 +139,8 @@ namespace config_export {
         resolved.enabled = *ovr.enabled;
       if (ovr.autoHide)
         resolved.autoHide = *ovr.autoHide;
+      if (ovr.autoHideDelayMs)
+        resolved.autoHideDelayMs = *ovr.autoHideDelayMs;
       if (ovr.smartAutoHide)
         resolved.smartAutoHide = *ovr.smartAutoHide;
       if (ovr.showOnWorkspaceSwitch)
@@ -231,6 +233,8 @@ namespace config_export {
         resolved.widgetCapsuleBorderWidth = *ovr.widgetCapsuleBorderWidth;
       if (ovr.hoverHighlight)
         resolved.hoverHighlight = *ovr.hoverHighlight;
+      if (ovr.showTooltip)
+        resolved.showTooltip = *ovr.showTooltip;
       if (ovr.deadZone.actions)
         resolved.deadZone.actions = *ovr.deadZone.actions;
       return resolved;
