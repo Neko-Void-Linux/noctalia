@@ -170,6 +170,7 @@ public:
   void setKeyboardEventCallback(WaylandSeat::KeyboardEventCallback callback);
   void setKeyboardModifiersCallback(WaylandSeat::KeyboardModifiersCallback callback);
   void setLockKeysChangeCallback(WaylandSeat::LockKeysChangeCallback callback);
+  void setKeyboardLayoutChangeCallback(WaylandSeat::KeyboardLayoutChangeCallback callback);
   /// Fired when both `ext_idle_notifier_v1` and `wl_seat` are bound (including late registry globals).
   void setIdleCapabilitiesReadyCallback(ChangeCallback callback);
   void setClipboardService(ClipboardService* clipboardService);
@@ -243,6 +244,7 @@ public:
   [[nodiscard]] std::optional<ActiveToplevel>
   matchToplevelByTitleAndAppId(std::string_view title, std::string_view appId, wl_output* preferredOutput) const;
   [[nodiscard]] wl_output* activeToplevelOutput() const;
+  [[nodiscard]] bool hasFullscreenToplevel() const;
   [[nodiscard]] std::vector<std::string> runningAppIds(wl_output* outputFilter = nullptr) const;
   [[nodiscard]] std::vector<ToplevelInfo>
   windowsForApp(const std::string& idLower, const std::string& wmClassLower, wl_output* outputFilter = nullptr) const;
@@ -256,6 +258,8 @@ public:
     m_extForeignToplevels.visitExtHandles(std::forward<Fn>(fn));
   }
   void activateToplevel(zwlr_foreign_toplevel_handle_v1* handle);
+  [[nodiscard]] bool minimizeToplevel(zwlr_foreign_toplevel_handle_v1* handle);
+  [[nodiscard]] std::optional<bool> toplevelMinimized(zwlr_foreign_toplevel_handle_v1* handle) const;
   void closeToplevel(zwlr_foreign_toplevel_handle_v1* handle);
   template <typename Fn> void visitWlrToplevelHandles(Fn&& fn) const {
     m_toplevelsHandler.visitWlrHandles(std::forward<Fn>(fn));
