@@ -51,6 +51,9 @@ public:
       void(std::uint64_t hostId, int callbackRef, bool ok, int status, std::string body, bool isDownload)>;
   using ColorPickerResultHandler =
       std::function<void(std::uint64_t hostId, int callbackRef, std::optional<std::string> color)>;
+  // `error` is nullopt when Umbriel accepted the action.
+  using UmbrielActionResultHandler =
+      std::function<void(std::uint64_t hostId, int callbackRef, std::optional<std::string> error)>;
   // Registers a `noctalia.state.watch` callback with the shared store (the runtime
   // owns the token + delivery, so registration is delegated back to it).
   using StateWatchHandler = std::function<void(std::string key, int callbackRef)>;
@@ -164,6 +167,9 @@ public:
   void setColorPickerResultHandler(ColorPickerResultHandler handler) {
     m_colorPickerResultHandler = std::move(handler);
   }
+  void setUmbrielActionResultHandler(UmbrielActionResultHandler handler) {
+    m_umbrielActionResultHandler = std::move(handler);
+  }
   [[nodiscard]] bool
   startAsyncProcess(std::vector<std::string> args, int callbackRef, std::chrono::milliseconds timeout);
   [[nodiscard]] bool startAsyncProcessMatch(std::vector<std::string> needles, int callbackRef);
@@ -180,11 +186,17 @@ public:
   [[nodiscard]] bool startColorPicker(const Color& initialColor, int callbackRef);
   bool
   callColorPickerCallback(int callbackRef, const std::optional<std::string>& color, std::chrono::milliseconds budget);
+  // Sends one typed action request to the Umbriel socket on the script IO pool. `callbackRef` may be
+  // LUA_NOREF for fire-and-forget; otherwise the reply arrives as cb(ok, err).
+  [[nodiscard]] bool startUmbrielAction(std::string socketPath, std::string payload, int callbackRef);
+  bool
+  callUmbrielActionCallback(int callbackRef, const std::optional<std::string>& error, std::chrono::milliseconds budget);
   [[nodiscard]] bool hasAsyncCommandCallback(int callbackRef) const;
   [[nodiscard]] bool hasAsyncProcessMatchCallback(int callbackRef) const;
   [[nodiscard]] bool hasAsyncFileCallback(int callbackRef) const;
   [[nodiscard]] bool hasAsyncHttpCallback(int callbackRef) const;
   [[nodiscard]] bool hasColorPickerCallback(int callbackRef) const;
+  [[nodiscard]] bool hasUmbrielActionCallback(int callbackRef) const;
   [[nodiscard]] bool hasSoundLoadCallback(int callbackRef) const;
   bool callSoundLoadCallback(int callbackRef, bool ok, const std::string& error, std::chrono::milliseconds budget);
   void interruptIfBudgetExceeded(lua_State* L);
@@ -303,6 +315,7 @@ private:
   std::unordered_set<int> m_asyncProcessMatchCallbackRefs;
   std::unordered_set<int> m_asyncHttpCallbackRefs;
   std::unordered_set<int> m_colorPickerCallbackRefs;
+  std::unordered_set<int> m_umbrielActionCallbackRefs;
   std::unordered_map<int, std::string> m_soundLoadCallbacks;
   std::unordered_set<int> m_idleWatchCallbackRefs;
   HttpClient* m_httpClient = nullptr;
@@ -311,6 +324,7 @@ private:
   AsyncProcessMatchResultHandler m_asyncProcessMatchResultHandler;
   AsyncHttpResultHandler m_asyncHttpResultHandler;
   ColorPickerResultHandler m_colorPickerResultHandler;
+  UmbrielActionResultHandler m_umbrielActionResultHandler;
   std::size_t m_memUsed = 0; // bytes tracked by allocate(); guarded by the worker-thread serialization
   std::chrono::nanoseconds m_callCpuDeadline{};
   std::string m_currentCallName;

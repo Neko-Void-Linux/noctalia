@@ -863,10 +863,7 @@ void NotificationToast::onNotificationEvent(const Notification& n, NotificationE
           m_notifications->pauseExpiry(n.id);
         }
 
-        if (!hasPlacement(m_entries[i])) {
-          syncEntryVisibility(i);
-          revealQueuedEntries();
-        } else if (std::abs(previousHeight - m_entries[i].height) > 0.5F) {
+        if (!hasPlacement(m_entries[i]) || std::abs(previousHeight - m_entries[i].height) > 0.5F) {
           syncEntryVisibility(i);
           revealQueuedEntries();
         }
@@ -1504,12 +1501,24 @@ void NotificationToast::resumeCountdowns(uint32_t notificationId) {
 }
 
 void NotificationToast::revealQueuedEntries() {
+  // enforceMaxVisible() only runs on add, config reload and output change; other reveal paths must respect
+  // max_visible here.
+  const int max = m_config != nullptr ? m_config->config().notification.maxVisible : 0;
+  const auto stackIsFull = [this, max](const PopupEntry& entry) {
+    if (max <= 0) {
+      return false;
+    }
+    const auto placedInStack = std::ranges::count_if(m_entries, [this, &entry](const PopupEntry& other) {
+      return hasPlacement(other) && entriesShareStack(entry, other);
+    });
+    return placedInStack >= max;
+  };
   bool placed = false;
   do {
     placed = false;
     for (std::size_t i = 0; i < m_entries.size(); ++i) {
       auto& entry = m_entries[i];
-      if (entry.exiting || hasPlacement(entry)) {
+      if (entry.exiting || hasPlacement(entry) || stackIsFull(entry)) {
         continue;
       }
       const auto placement = findPlacementY(entry.height, entry.targetOutput);
@@ -1553,6 +1562,7 @@ void NotificationToast::enforceMaxVisible() {
     }
   }
 
+  bool evicted = false;
   for (const auto& placedIndices : placedGroups) {
     if (static_cast<int>(placedIndices.size()) <= max) {
       continue;
@@ -1564,6 +1574,16 @@ void NotificationToast::enforceMaxVisible() {
       if (m_entries[i].rawTimeoutMs > 0 && m_notifications != nullptr) {
         m_notifications->pauseExpiry(m_entries[i].notificationId);
       }
+      syncEntryVisibility(i);
+      evicted = true;
+    }
+  }
+
+  // Close the slots left by evicted toasts, as a dismissal would, so new toasts stack after the rest.
+  if (evicted && m_config->config().notification.collapseOnDismiss) {
+    collapseStack();
+    // The repacked stack may now fit on shorter monitors where some cards were skipped.
+    for (std::size_t i = 0; i < m_entries.size(); ++i) {
       syncEntryVisibility(i);
     }
   }
@@ -3136,7 +3156,7 @@ std::string NotificationToast::resolveNotificationIconPath(const PopupEntry& ent
     return {};
   }
 
-  const std::string localPath = normalizeLocalIconPath(iconValue);
+  std::string localPath = normalizeLocalIconPath(iconValue);
   if (!localPath.empty() && localPath.front() == '/') {
     if (access(localPath.c_str(), R_OK) == 0) {
       return localPath;

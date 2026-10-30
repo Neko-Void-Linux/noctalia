@@ -1,5 +1,6 @@
 #include "shell/settings/settings_window.h"
 
+#include "calendar/calendar_service.h"
 #include "compositors/compositor_platform.h"
 #include "config/config_service.h"
 #include "config/config_types.h"
@@ -10,8 +11,11 @@
 #include "core/log.h"
 #include "core/scoped_timer.h"
 #include "core/ui_phase.h"
+#include "dbus/idle/screensaver_service.h"
 #include "i18n/i18n.h"
+#include "idle/idle_inhibitor.h"
 #include "idle/idle_manager.h"
+#include "net/url_open.h"
 #include "render/core/async_texture_cache.h"
 #include "render/render_context.h"
 #include "render/text/font_weight_catalog.h"
@@ -167,15 +171,42 @@ namespace {
 
 SettingsWindow::SettingsWindow() = default;
 
-SettingsWindow::~SettingsWindow() { destroyWindow(); }
+SettingsWindow::~SettingsWindow() {
+  setCalendarService(nullptr);
+  destroyWindow();
+}
+
+void SettingsWindow::setCalendarService(CalendarService* service) {
+  if (m_calendarService != nullptr && m_calendarCallbackId.has_value()) {
+    m_calendarService->removeChangeCallback(*m_calendarCallbackId);
+  }
+  m_calendarCallbackId.reset();
+  m_calendarService = service;
+  if (service == nullptr) {
+    return;
+  }
+  m_calendarSyncStatusRevision = service->syncStatusRevision();
+  m_calendarCallbackId = service->addChangeCallback([this] {
+    const std::uint64_t revision = m_calendarService->syncStatusRevision();
+    if (revision == m_calendarSyncStatusRevision) {
+      return;
+    }
+    m_calendarSyncStatusRevision = revision;
+    if (isOpen()) {
+      requestContentRebuild(true);
+    }
+  });
+}
 
 void SettingsWindow::initialize(
     WaylandConnection& wayland, ConfigService* config, RenderContext* renderContext, DependencyService* dependencies,
-    UPowerService* upower, IdleManager* idleManager, CompositorPlatform* platform, AccountsService* accounts
+    UPowerService* upower, IdleManager* idleManager, IdleInhibitor* idleInhibitor, CompositorPlatform* platform,
+    AccountsService* accounts
 ) {
   m_wayland = &wayland;
   m_platform = platform;
   m_idleManager = idleManager;
+  m_idleInhibitor = idleInhibitor;
   m_config = config;
   m_renderContext = renderContext;
   m_dependencies = dependencies;
@@ -255,6 +286,15 @@ bool SettingsWindow::headerDragRegionContains(float sceneX, float sceneY) const 
   const float dragRight = std::max(sceneWidth, right);
   const float dragBottom = std::clamp(bottom, 0.0F, sceneHeight);
   return sceneX >= dragLeft && sceneX < dragRight && sceneY >= dragTop && sceneY < dragBottom;
+}
+
+void SettingsWindow::openBrowserUrl(const std::string& url) {
+  if (m_platform == nullptr || m_surface == nullptr) {
+    return;
+  }
+
+  const auto token = m_platform->requestActivationToken(m_surface->wlSurface());
+  (void)net::openInBrowser(url, token);
 }
 
 bool SettingsWindow::ownsKeyboardSurface(wl_surface* surface) const noexcept {
@@ -1231,6 +1271,37 @@ void SettingsWindow::invalidatePluginSourceCache(const std::string& sourceName) 
 
 void SettingsWindow::refreshIdleLiveStatusText() {
   if (m_idleLiveStatusLabel == nullptr) {
+    return;
+  }
+
+  if (m_screenSaverService != nullptr && m_screenSaverService->inhibitLocks() > 0) {
+    std::string inhibitors;
+    std::int64_t inhibitorCount = 0;
+    const auto append = [&inhibitors, &inhibitorCount](std::string_view entry) {
+      if (inhibitorCount > 0) {
+        inhibitors += ", ";
+      }
+      inhibitors += entry;
+      ++inhibitorCount;
+    };
+
+    if (m_idleInhibitor != nullptr && m_idleInhibitor->enabled()) {
+      append(i18n::tr("settings.idle.live-status.inhibit-reason-caffeine"));
+    }
+
+    for (const auto& [app, reason] : m_screenSaverService->inhibitorList()) {
+      append(app);
+      if (!reason.empty()) {
+        inhibitors.append(" (").append(reason).append(")");
+      }
+    }
+
+    if (inhibitorCount < m_screenSaverService->inhibitLocks()) {
+      append(i18n::tr("settings.idle.live-status.inhibit-reason-external"));
+    }
+
+    m_idleLiveStatusLabel->setColor(colorSpecFromRole(ColorRole::OnSurfaceVariant));
+    m_idleLiveStatusLabel->setText(i18n::tr("settings.idle.live-status.inhibited", "inhibitors", inhibitors));
     return;
   }
 

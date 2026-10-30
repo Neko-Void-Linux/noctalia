@@ -4,7 +4,6 @@
 #include "compositors/compositor_detect.h"
 #include "compositors/umbriel/umbriel_audio_provider.h"
 #include "config/config_types.h"
-#include "core/build_info.h"
 #include "core/deferred_call.h"
 #include "core/input/keybind_matcher.h"
 #include "core/log.h"
@@ -12,7 +11,6 @@
 #include "dbus/accounts/accounts_service.h"
 #include "dbus/bluetooth/bluetooth_agent.h"
 #include "dbus/bluetooth/bluetooth_service.h"
-#include "dbus/idle/screensaver_poll_source.h"
 #include "dbus/idle/screensaver_service.h"
 #include "dbus/logind/logind_service.h"
 #include "dbus/modem/modem_manager_service.h"
@@ -32,15 +30,12 @@
 #include "dbus/power/power_profiles_service.h"
 #include "dbus/secret/secret_collection_probe.h"
 #include "dbus/session_bus.h"
-#include "dbus/session_bus_poll_source.h"
 #include "dbus/system_bus.h"
-#include "dbus/system_bus_poll_source.h"
 #include "dbus/tray/tray_service.h"
 #include "dbus/upower/upower_service.h"
 #include "debug/debug_service.h"
 #include "i18n/i18n.h"
 #include "i18n/i18n_service.h"
-#include "ipc/ipc_arg_parse.h"
 #include "launcher/app_provider.h"
 #include "launcher/dmenu_provider.h"
 #include "launcher/emoji_provider.h"
@@ -50,24 +45,17 @@
 #include "launcher/wallpaper_provider.h"
 #include "launcher/window_provider.h"
 #include "notification/notifications.h"
-#include "pipewire/pipewire_poll_source.h"
 #include "pipewire/pipewire_service.h"
 #include "pipewire/pipewire_spectrum.h"
-#include "pipewire/pipewire_spectrum_poll_source.h"
 #include "pipewire/sound_player.h"
 #include "pipewire/wireplumber_mixer.h"
 #include "render/animation/motion_service.h"
 #include "render/backend/render_backend.h"
 #include "render/core/texture_manager.h"
-#include "render/text/font_weight_catalog.h"
 #include "scripting/plugin_ipc.h"
-#include "scripting/plugin_manifest.h"
-#include "scripting/plugin_panel_shell.h"
-#include "scripting/plugin_registry.h"
 #include "scripting/plugin_runtime_context.h"
 #include "scripting/script_runtime.h"
 #include "shell/clipboard/clipboard_panel.h"
-#include "shell/clipboard/clipboard_paste.h"
 #include "shell/control_center/control_center_panel.h"
 #include "shell/greeter/greeter_appearance_sync.h"
 #include "shell/launcher/launcher_panel.h"
@@ -81,7 +69,6 @@
 #include "shell/tray/tray_drawer_panel.h"
 #include "shell/wallpaper/panel/wallpaper_panel.h"
 #include "shell/wallpaper/wallpaper_paths.h"
-#include "system/brightness_poll_source.h"
 #include "system/brightness_service.h"
 #include "system/distro_info.h"
 #include "system/easyeffects_service.h"
@@ -89,12 +76,7 @@
 #include "system/system_monitor_service.h"
 #include "ui/app_icon_colorization.h"
 #include "ui/controls/input.h"
-#include "ui/dialogs/color_picker_dialog.h"
-#include "ui/dialogs/file_dialog.h"
-#include "ui/dialogs/glyph_picker_dialog.h"
 #include "ui/style.h"
-#include "util/file_utils.h"
-#include "util/string_utils.h"
 
 #include <algorithm>
 #include <chrono>
@@ -103,7 +85,6 @@
 #include <cstdint>
 #include <filesystem>
 #include <limits>
-#include <malloc.h>
 #include <optional>
 #include <stdexcept>
 #include <string_view>
@@ -505,8 +486,9 @@ void Application::syncClipboardService() {
 
 void Application::syncStorageKeyProvider() {
   const StorageConfig& storage = m_configService.config().storage;
-  const bool encryptedDataExists =
-      m_clipboardService.hasEncryptedPersistence() || m_calendarService.hasEncryptedCache();
+  const bool encryptedDataExists = m_clipboardService.hasEncryptedPersistence()
+      || m_calendarService.hasEncryptedCache()
+      || m_notificationManager.hasEncryptedHistory();
   m_storageKeyProvider.configure(storage.keySource, storage.keyFile, encryptedDataExists);
 }
 
@@ -517,6 +499,8 @@ void Application::initServices() {
   m_storageKeyProvider.setChangeCallback([this] {
     m_clipboardService.syncPersistence();
     m_calendarService.syncCachePersistence();
+    m_notificationManager.syncHistoryPersistence(m_storageKeyProvider);
+    m_settingsWindow.onExternalOptionsChanged();
     retrySecretServiceConsumers();
   });
   syncStorageKeyProvider();
@@ -1021,11 +1005,11 @@ void Application::initAuxServicesAndHooks() {
         if (path.empty()) {
           return;
         }
-        std::string cmd = "plasma-apply-wallpaperimage";
+        std::vector<std::string> cmd{"plasma-apply-wallpaperimage"};
         if (!connector.empty()) {
-          cmd += " --screen " + connector;
+          cmd.insert(cmd.end(), {"--screen", connector});
         }
-        cmd += " \"" + path + "\"";
+        cmd.push_back(path);
         (void)process::runAsync(cmd);
       };
       if (wallpaperChanges.empty()) {
@@ -1272,6 +1256,7 @@ void Application::initSystemBusServices() {
       const auto& initialPower = m_upowerService->state();
       m_batteryHookState.reset(initialPower);
       m_prevBatteryPluggedForEvents = initialPower.isPresent ? batteryStatePlugged(initialPower.state) : std::nullopt;
+      m_prevBatteryPeripheralPathForEvents = m_upowerService->statePeripheralPath();
       m_batteryWarningMonitor.evaluate(m_configService.config().battery, *m_upowerService, m_notificationManager);
       m_upowerService->setChangeCallback([this, shouldRefreshControlCenter](const UPowerChange& change) {
         if (change.origin != UPowerService::ChangeOrigin::DeviceState) {
@@ -1529,7 +1514,7 @@ void Application::initBrightnessAndPipewire() {
         },
         "umbriel-audio"
     );
-    m_soundPlayer = std::make_shared<SoundPlayer>(m_pipewireService->loop());
+    m_soundPlayer = std::make_shared<SoundPlayer>();
 
     auto applySoundConfig = [this] {
       if (m_soundPlayer == nullptr) {
