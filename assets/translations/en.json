@@ -1506,6 +1506,7 @@
         "keybinds": "Keybinds",
         "launcher": "Launcher",
         "location": "Location",
+        "lock-screen": "Lock Screen",
         "niri": "Niri",
         "notifications": "Notifications",
         "osd": "OSD",
@@ -1514,7 +1515,7 @@
         "popups": "Popups",
         "power": "Power",
         "screenshot": "Screenshot",
-        "security": "Security",
+        "security": "Privacy & Security",
         "services": "Services",
         "shell": "Shell",
         "system": "System",
@@ -1716,7 +1717,8 @@
         },
         "window-switcher-style": {
           "carousel": "Carousel",
-          "compact": "Compact"
+          "compact": "Compact",
+          "icons": "Icons Only"
         }
       },
       "theme": {
@@ -3189,6 +3191,11 @@
           "description": "Volume for shell sound effects",
           "label": "Sound Volume"
         },
+        "spectrum-frame-rate": {
+          "description": "Higher rates are smoother but use more resources",
+          "label": "Visualizer Frame Rate",
+          "option": "{fps} FPS"
+        },
         "sunrise": {
           "description": "Manual sunrise time in HH:MM, used when no location is set",
           "label": "Sunrise"
@@ -3716,19 +3723,19 @@
           "label": "Show All Monitors"
         },
         "window-switcher-show-app-icon": {
-          "description": "Show each application's icon over its window preview",
+          "description": "Show each application's icon over its window preview; icons are always shown in Icons Only",
           "label": "Show Application Icon"
         },
         "window-switcher-show-caption": {
-          "description": "Show window titles and application names below their previews",
+          "description": "Show captions below previews, or the selected window title below the icon grid",
           "label": "Show Caption"
         },
         "window-switcher-show-count": {
-          "description": "Show the current position and total window count above the previews",
+          "description": "Show the current position and total window count above the switcher",
           "label": "Show Window Count"
         },
         "window-switcher-style": {
-          "description": "Choose the freestanding depth carousel or the boxed compact strip",
+          "description": "Choose the preview carousel, compact preview strip, or icons-only grid",
           "label": "Switcher Style"
         }
       },
@@ -5255,6 +5262,24 @@
   },
   "ui": {
     "controls": {
+      "key-names": {
+        "backspace": "Backspace",
+        "delete": "Delete",
+        "down": "Down",
+        "end": "End",
+        "enter": "Enter",
+        "escape": "Escape",
+        "home": "Home",
+        "insert": "Insert",
+        "left": "Left",
+        "numpad-enter": "Numpad Enter",
+        "page-down": "Page Down",
+        "page-up": "Page Up",
+        "right": "Right",
+        "space": "Space",
+        "tab": "Tab",
+        "up": "Up"
+      },
       "search-picker": {
         "empty": "No results",
         "placeholder": "Search…"
