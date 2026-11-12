@@ -1,5 +1,5 @@
 #include "render/core/color.h"
-#include "test_check.h"
+#include "tests/test_check.h"
 #include "theme/fixed_palette_json.h"
 
 #include <algorithm>
@@ -34,7 +34,7 @@ namespace {
     TempDir(const TempDir&) = delete;
     TempDir& operator=(const TempDir&) = delete;
 
-    [[nodiscard]] const std::filesystem::path& path() const { return m_path; }
+    const std::filesystem::path& path() const { return m_path; }
 
   private:
     std::filesystem::path m_path;

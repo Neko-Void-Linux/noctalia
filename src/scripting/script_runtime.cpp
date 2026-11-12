@@ -11,7 +11,7 @@
 #include "scripting/script_api_context.h"
 #include "scripting/script_worker_pool.h"
 #include "scripting/ui_prelude.h"
-#include "wayland/clipboard_service.h"
+#include "shell/wayland/clipboard_service.h"
 
 #include <algorithm>
 #include <atomic>
@@ -150,11 +150,11 @@ namespace scripting {
       dest.unhealthy = dest.unhealthy || src.unhealthy;
     }
 
-    template <typename SoundLoadCompletion, typename IdleDeliveryFactory>
+    template <typename SoundLoadCompletion, typename IdleDeliveryFactory, typename NightLightDeliveryFactory>
     void dispatchSideEffects(
         const std::vector<ScriptSideEffect>& effects, ClipboardService* clipboard, ScriptApiContext& api,
         const ScriptRuntime::TogglePanelCallback& togglePanelCallback, const SoundLoadCompletion& soundLoadCompletion,
-        const IdleDeliveryFactory& idleDelivery
+        const IdleDeliveryFactory& idleDelivery, const NightLightDeliveryFactory& nightLightDelivery
     ) {
       for (const auto& effect : effects) {
         switch (effect.kind) {
@@ -218,6 +218,15 @@ namespace scripting {
         case ScriptSideEffectKind::ShowOsd:
           api.invokeShowOsd(effect.title, effect.body, effect.number, effect.flag);
           break;
+        case ScriptSideEffectKind::NightLightCommand:
+          api.invokeNightLightCommand(effect.nightLightCommand, effect.flag);
+          break;
+        case ScriptSideEffectKind::NightLightWatch:
+          api.watchNightLight(effect.hostId, effect.callbackRef, nightLightDelivery(effect.hostId, effect.callbackRef));
+          break;
+        case ScriptSideEffectKind::NightLightUnwatch:
+          api.unwatchNightLight(effect.hostId, effect.callbackRef);
+          break;
         }
       }
     }
@@ -271,6 +280,8 @@ namespace scripting {
     bool hasOnScrollKnown = false;
     bool hasOnKey = false;
     bool hasOnKeyKnown = false;
+    bool hasUpdate = false;
+    bool hasUpdateKnown = false;
     bool unhealthy = false;
     int consecutiveTimeouts = 0;
     // Shell config paths the current load read via noctalia.getSetting. Written on the
@@ -315,7 +326,7 @@ namespace scripting {
           "plugin {}: shell setting read via getSetting changed, {}", runtimeName,
           event.kind == ScriptEventKind::Reload ? "reloading" : "calling onConfigChanged"
       );
-      (void)enqueue(std::move(event));
+      enqueue(std::move(event));
     }
 
     SubscriberId subscribe(ScriptResultCallback callback) {
@@ -508,7 +519,7 @@ namespace scripting {
       event.callbackRef = callbackRef;
       event.commandResult = std::move(result);
       event.budget = kCallBudget;
-      (void)enqueue(std::move(event));
+      enqueue(std::move(event));
     }
 
     void enqueueAsyncFileResult(std::uint64_t hostId, int callbackRef, bool ok, std::string data, std::string error) {
@@ -520,7 +531,7 @@ namespace scripting {
       event.fileData = std::move(data);
       event.fileError = std::move(error);
       event.budget = kCallBudget;
-      (void)enqueue(std::move(event));
+      enqueue(std::move(event));
     }
 
     void enqueueAsyncProcessMatchResult(std::uint64_t hostId, int callbackRef, bool matched) {
@@ -530,7 +541,7 @@ namespace scripting {
       event.callbackRef = callbackRef;
       event.processMatchResult = matched;
       event.budget = kCallBudget;
-      (void)enqueue(std::move(event));
+      enqueue(std::move(event));
     }
 
     void enqueueAsyncHttpResult(
@@ -545,7 +556,7 @@ namespace scripting {
       event.httpBody = std::move(body);
       event.httpIsDownload = isDownload;
       event.budget = kCallBudget;
-      (void)enqueue(std::move(event));
+      enqueue(std::move(event));
     }
 
     void enqueueSoundLoadResult(std::uint64_t hostId, int callbackRef, bool ok, std::string error) {
@@ -556,7 +567,7 @@ namespace scripting {
       event.soundLoadOk = ok;
       event.soundLoadError = std::move(error);
       event.budget = kCallBudget;
-      (void)enqueue(std::move(event));
+      enqueue(std::move(event));
     }
 
     void enqueueColorPickerResult(std::uint64_t hostId, int callbackRef, std::optional<std::string> color) {
@@ -566,7 +577,7 @@ namespace scripting {
       event.callbackRef = callbackRef;
       event.colorPickerResult = std::move(color);
       event.budget = kCallBudget;
-      (void)enqueue(std::move(event));
+      enqueue(std::move(event));
     }
 
     void enqueueUmbrielActionResult(std::uint64_t hostId, int callbackRef, std::optional<std::string> error) {
@@ -576,7 +587,7 @@ namespace scripting {
       event.callbackRef = callbackRef;
       event.umbrielActionError = std::move(error);
       event.budget = kCallBudget;
-      (void)enqueue(std::move(event));
+      enqueue(std::move(event));
     }
 
     void enqueueStateWatchResult(int callbackRef, std::string json) {
@@ -585,7 +596,7 @@ namespace scripting {
       event.callbackRef = callbackRef;
       event.stateJson = std::move(json);
       event.budget = kCallBudget;
-      (void)enqueue(std::move(event));
+      enqueue(std::move(event));
     }
 
     void enqueueIdleWatchResult(std::uint64_t hostId, int callbackRef, bool idle) {
@@ -595,7 +606,17 @@ namespace scripting {
       event.callbackRef = callbackRef;
       event.idle = idle;
       event.budget = kCallBudget;
-      (void)enqueue(std::move(event));
+      enqueue(std::move(event));
+    }
+
+    void enqueueNightLightWatchResult(std::uint64_t hostId, int callbackRef, scripting::ScriptNightLightState state) {
+      ScriptEvent event;
+      event.kind = ScriptEventKind::NightLightWatchResult;
+      event.hostId = hostId;
+      event.callbackRef = callbackRef;
+      event.nightLightState = std::move(state);
+      event.budget = kCallBudget;
+      enqueue(std::move(event));
     }
 
     void enqueueStreamLine(std::uint64_t hostId, int callbackRef, std::string line) {
@@ -605,7 +626,7 @@ namespace scripting {
       event.callbackRef = callbackRef;
       event.first = std::move(line);
       event.budget = kCallBudget;
-      (void)enqueue(std::move(event));
+      enqueue(std::move(event));
     }
 
     void
@@ -618,7 +639,7 @@ namespace scripting {
       event.httpOk = ok;
       event.httpStatus = status;
       event.budget = kCallBudget;
-      (void)enqueue(std::move(event));
+      enqueue(std::move(event));
     }
 
     void drain() {
@@ -763,6 +784,15 @@ namespace scripting {
         bindingContext.beginCall(event.snapshot);
         const bool ok = host->callIdleWatchCallback(event.callbackRef, event.idle, event.budget);
         return collectResult(event, "idle watch callback", ok);
+      }
+
+      if (event.kind == ScriptEventKind::NightLightWatchResult) {
+        if (event.hostId != host->hostId() || !host->hasNightLightWatchCallback(event.callbackRef)) {
+          return std::nullopt;
+        }
+        bindingContext.beginCall(event.snapshot);
+        const bool ok = host->callNightLightWatchCallback(event.callbackRef, event.nightLightState, event.budget);
+        return collectResult(event, "night light watch callback", ok);
       }
 
       if (event.kind == ScriptEventKind::StreamLine) {
@@ -955,6 +985,7 @@ namespace scripting {
       const bool onConfigChangedPresent = host != nullptr && host->hasGlobal("onConfigChanged");
       const bool onScrollPresent = host != nullptr && host->hasGlobal("onScroll");
       const bool onKeyPresent = host != nullptr && host->hasGlobal("onKey");
+      const bool updatePresent = host != nullptr && host->hasGlobal("update");
       {
         std::scoped_lock lock(mutex);
         hasOnIpc = result.hasOnIpc;
@@ -967,6 +998,8 @@ namespace scripting {
         hasOnScrollKnown = true;
         hasOnKey = onKeyPresent;
         hasOnKeyKnown = true;
+        hasUpdate = updatePresent;
+        hasUpdateKnown = true;
       }
       return result;
     }
@@ -992,7 +1025,7 @@ namespace scripting {
           break;
         }
         const ScriptArgs args{static_cast<double>(signal), std::string(reason)};
-        (void)host->callGlobalWithArgsAndBudget("onExit", args, kCallBudget);
+        host->callGlobalWithArgsAndBudget("onExit", args, kCallBudget);
       }
       PluginStateStore::instance().removeWatchers(stateToken);
       host.reset();
@@ -1144,6 +1177,13 @@ namespace scripting {
                 state->enqueueIdleWatchResult(hostId, callbackRef, idle);
               }
             };
+          },
+          [weak](std::uint64_t hostId, int callbackRef) {
+            return [weak, hostId, callbackRef](scripting::ScriptNightLightState state) {
+              if (auto runtimeState = weak.lock()) {
+                runtimeState->enqueueNightLightWatchResult(hostId, callbackRef, std::move(state));
+              }
+            };
           }
       );
       for (const auto& effect : result.sideEffects) {
@@ -1252,7 +1292,7 @@ namespace scripting {
     event.source = std::move(source);
     event.snapshot = std::move(snapshot);
     event.budget = kLoadBudget;
-    (void)m_state->enqueue(std::move(event));
+    m_state->enqueue(std::move(event));
   }
 
   bool ScriptRuntime::enqueueUpdate(ScriptSnapshot snapshot) {
@@ -1359,6 +1399,14 @@ namespace scripting {
     }
     std::scoped_lock lock(m_state->mutex);
     return m_state->hasOnKeyKnown && m_state->hasOnKey;
+  }
+
+  bool ScriptRuntime::loadedWithoutUpdate() const {
+    if (m_state == nullptr) {
+      return false;
+    }
+    std::scoped_lock lock(m_state->mutex);
+    return m_state->hasUpdateKnown && !m_state->hasUpdate;
   }
 
   bool ScriptRuntime::unhealthy() const {

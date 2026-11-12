@@ -338,6 +338,8 @@ namespace noctalia::cli {
           false
       },
       Flag{"--filename-pattern", {}, "<pattern>", "Set filename_pattern for this call", {}, {}, false, false},
+      Flag{"--append-mode-suffix", {}, {}, "Set append_mode_suffix = true for this call", {}, {}, false, false},
+      Flag{"--no-append-mode-suffix", {}, {}, "Set append_mode_suffix = false for this call", {}, {}, false, false},
       Flag{"--format", {}, "<format>", "Set format for this call", kMsgScreenshotFormatChoices, {}, false, false},
       Flag{"--quality", {}, "<1-100>", "Set quality for this call", {}, {}, false, false},
   };
@@ -1055,10 +1057,11 @@ namespace noctalia::cli {
       "msg", "Send a command to the running instance", {}, {}, {}, {}, kMsgSubcommands, false,
   };
 
-  [[nodiscard]] constexpr const Command* findMsgCommand(std::string_view name) {
+  constexpr const Command* findMsgCommand(std::string_view name) {
     for (const Command& command : kMsgCmd.subcommands) {
-      if (command.name == name)
+      if (command.name == name) {
         return &command;
+      }
     }
     return nullptr;
   }

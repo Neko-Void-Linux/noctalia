@@ -47,9 +47,9 @@ public:
   void onToplevelChange();
   void show(wl_output* output);
 
-  [[nodiscard]] bool isActive() const noexcept { return m_active; }
-  [[nodiscard]] bool onPointerEvent(const PointerEvent& event);
-  [[nodiscard]] bool onKeyboardEvent(const KeyboardEvent& event);
+  bool isActive() const noexcept { return m_active; }
+  bool onPointerEvent(const PointerEvent& event);
+  bool onKeyboardEvent(const KeyboardEvent& event);
   void onKeyboardModifiers(std::uint32_t modifiers);
 
 private:
@@ -59,17 +59,17 @@ private:
   void refreshWindows();
   void setSelectedIndex(std::size_t index);
   void cycleSelection(int delta);
-  void navigateList(int delta);
+  void navigateGridRow(int delta);
   void activateSelected();
   void closeWindowAt(std::size_t index);
   void requestSceneUpdate();
   void startThumbnailCaptures();
   void enqueueMissingThumbnailCaptures();
-  [[nodiscard]] std::optional<ThumbnailTarget> currentThumbnailTarget() const;
+  std::optional<ThumbnailTarget> currentThumbnailTarget() const;
   void captureNextThumbnail();
   void cancelThumbnailCaptures();
-  [[nodiscard]] bool matchesTrigger(const KeyboardEvent& event) const noexcept;
-  [[nodiscard]] bool isModifierRelease(const KeyboardEvent& event) const noexcept;
+  bool matchesTrigger(const KeyboardEvent& event) const noexcept;
+  bool isModifierRelease(const KeyboardEvent& event) const noexcept;
   void ensureSurface();
   void destroySurface();
   void prepareFrame(Instance& instance, bool needsUpdate, bool needsLayout);
@@ -77,7 +77,7 @@ private:
   void positionPanel(Instance& instance, float screenW, float screenH);
   void syncSelection(bool animate);
   void prioritizeSelectedThumbnail();
-  [[nodiscard]] bool mruEnabled() const;
+  bool mruEnabled() const;
   void recordFocusedWindow();
   void promoteMruKey(const std::string& key);
   void showFromShortcut(wl_output* output, std::uint32_t modifiers);
@@ -108,6 +108,7 @@ private:
   ThumbnailTarget m_thumbnailTarget;
   std::deque<std::string> m_mruKeys;
   std::size_t m_selectedIndex = 0;
+  std::size_t m_gridFirstRow = 0;
   wl_output* m_output = nullptr;
   wl_callback* m_shortcutReleaseSync = nullptr;
   WindowSwitcherShortcutState m_shortcutState;

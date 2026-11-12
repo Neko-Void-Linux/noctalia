@@ -27,7 +27,7 @@ struct ThumbnailTarget {
   int width = 0;
   int height = 0;
 
-  [[nodiscard]] bool operator==(const ThumbnailTarget&) const = default;
+  bool operator==(const ThumbnailTarget&) const = default;
 };
 
 struct WindowSwitcherEntry {
@@ -54,6 +54,7 @@ public:
   void setCardSize(float width, float height);
   void setShadowStyle(const RoundedRectStyle& style);
   void setShowCaption(bool show);
+  void setIntegratedCaption(bool integrated);
   void setShowAppIcon(bool show);
   void setShowPreview(bool show);
   void setAppIconColorizeTint(std::optional<ColorSpec> tint) { m_appIconColorizeTint = tint; }
@@ -100,6 +101,7 @@ protected:
   bool m_showCaption = true;
   bool m_captionVisible = false;
   bool m_wideCaption = false;
+  bool m_integratedCaption = false;
   bool m_showAppIcon = true;
   bool m_showPreview = true;
   WindowSwitcherHorizontalPlacement m_iconPlacement = WindowSwitcherHorizontalPlacement::Left;
