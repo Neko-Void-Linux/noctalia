@@ -21,11 +21,7 @@ namespace {
 
 } // namespace
 
-WindowSwitcherTile::WindowSwitcherTile(float contentScale, AsyncTextureCache* asyncTextures)
-    : m_contentScale(contentScale), m_asyncTextures(asyncTextures) {
-  const float cardRadius = Style::scaledRadiusXl(m_contentScale);
-  const float previewRadius = std::max(0.0F, cardRadius - Style::spaceXs * m_contentScale);
-
+WindowSwitcherTile::WindowSwitcherTile(float contentScale) : m_contentScale(contentScale) {
   setAcceptedButtons(InputArea::buttonMask(BTN_LEFT));
   setCursorShape(WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_POINTER);
   setOnClick([this](const InputArea::PointerData&) {
@@ -49,7 +45,8 @@ WindowSwitcherTile::WindowSwitcherTile(float contentScale, AsyncTextureCache* as
       ui::box({
           .out = &m_frame,
           .fill = colorSpecFromRole(ColorRole::Surface),
-          .radius = cardRadius,
+          .styleRadius = Style::radiusXl,
+          .styleRadiusScale = m_contentScale,
           .participatesInLayout = false,
           .configure = [](Box& box) { box.setClipChildren(true); },
       })
@@ -58,7 +55,6 @@ WindowSwitcherTile::WindowSwitcherTile(float contentScale, AsyncTextureCache* as
       ui::box({
           .out = &m_previewHost,
           .fill = colorSpecFromRole(ColorRole::SurfaceContainer),
-          .radius = previewRadius,
           .participatesInLayout = false,
           .configure = [](Box& box) { box.setClipChildren(true); },
       })
@@ -67,7 +63,6 @@ WindowSwitcherTile::WindowSwitcherTile(float contentScale, AsyncTextureCache* as
       ui::image({
           .out = &m_thumbnail,
           .fit = ImageFit::Contain,
-          .radius = previewRadius,
           .visible = false,
           .participatesInLayout = false,
       })
@@ -76,7 +71,6 @@ WindowSwitcherTile::WindowSwitcherTile(float contentScale, AsyncTextureCache* as
       ui::box({
           .out = &m_toneOverlay,
           .fill = clearColorSpec(),
-          .radius = previewRadius,
           .participatesInLayout = false,
       })
   );
@@ -140,7 +134,8 @@ WindowSwitcherTile::WindowSwitcherTile(float contentScale, AsyncTextureCache* as
       .fill = colorSpecFromRole(ColorRole::Surface),
       .border = scaleAlpha(colorSpecFromRole(ColorRole::OutlineVariant), Style::disabledOutlineAlpha),
       .borderWidth = Style::borderWidth,
-      .radius = cardRadius,
+      .styleRadius = Style::radiusXl,
+      .styleRadiusScale = m_contentScale,
       .visible = false,
       .participatesInLayout = false,
   });
@@ -186,6 +181,22 @@ WindowSwitcherTile::WindowSwitcherTile(float contentScale, AsyncTextureCache* as
       m_onInvalidate();
     }
   });
+
+  applyPreviewRadius();
+  m_radiusConn = Style::cornerRadiusChanged().connect([this] { applyPreviewRadius(); });
+}
+
+void WindowSwitcherTile::applyPreviewRadius() {
+  const float radius = std::max(0.0F, Style::scaledRadiusXl(m_contentScale) - Style::spaceXs * m_contentScale);
+  if (m_previewHost != nullptr) {
+    m_previewHost->setRadius(radius);
+  }
+  if (m_thumbnail != nullptr) {
+    m_thumbnail->setRadius(radius);
+  }
+  if (m_toneOverlay != nullptr) {
+    m_toneOverlay->setRadius(radius);
+  }
 }
 
 void WindowSwitcherTile::setCardSize(float width, float height) {
@@ -309,9 +320,7 @@ bool WindowSwitcherTile::refreshIcon(Renderer& renderer) {
     return false;
   }
   m_icon->setAppIconColorization(m_appIconColorizeTint);
-  const bool ready = m_asyncTextures != nullptr
-      ? m_icon->setSourceFileAsync(renderer, *m_asyncTextures, m_iconPath, m_iconTargetSize, true)
-      : m_icon->setSourceFile(renderer, m_iconPath, m_iconTargetSize, true);
+  const bool ready = m_icon->setSourceFile(renderer, m_iconPath, {.targetSize = m_iconTargetSize, .mipmap = true});
   m_icon->setVisible(ready);
   m_fallbackGlyph->setVisible(!ready);
   return ready;

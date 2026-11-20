@@ -646,7 +646,6 @@ struct WindowSwitcher::Instance {
   InputArea* input = nullptr;
   InputArea* panel = nullptr;
   Box* panelBackground = nullptr;
-  Box* dimmer = nullptr;
   InputArea* strip = nullptr;
   Node* gridContent = nullptr;
   std::vector<WindowSwitcherTile*> tiles;
@@ -667,14 +666,12 @@ struct WindowSwitcher::Instance {
 };
 
 void WindowSwitcher::initialize(
-    WaylandConnection& wayland, RenderContext* renderContext, CompositorPlatform& platform, ConfigService* config,
-    AsyncTextureCache* asyncTextures
+    WaylandConnection& wayland, RenderContext* renderContext, CompositorPlatform& platform, ConfigService* config
 ) {
   m_wayland = &wayland;
   m_renderContext = renderContext;
   m_platform = &platform;
   m_config = config;
-  m_asyncTextures = asyncTextures;
   m_thumbnailCapture = std::make_unique<ToplevelThumbnailCapture>(wayland);
 }
 
@@ -1747,6 +1744,7 @@ void WindowSwitcher::ensureSurface() {
       .keyboard = LayerShellKeyboard::Exclusive,
       .defaultWidth = static_cast<std::uint32_t>(output->effectiveLogicalWidth()),
       .defaultHeight = static_cast<std::uint32_t>(output->effectiveLogicalHeight()),
+      .prewarmBlur = true,
   };
 
   inst->surface = std::make_unique<LayerSurface>(*m_wayland, std::move(config));
@@ -2032,7 +2030,6 @@ void WindowSwitcher::buildScene(Instance& instance, std::uint32_t width, std::ui
 
   input->addChild(
       ui::box({
-          .out = &instance.dimmer,
           .fill = colorSpecFromRole(ColorRole::Shadow),
           .width = w,
           .height = h,
@@ -2054,7 +2051,8 @@ void WindowSwitcher::buildScene(Instance& instance, std::uint32_t width, std::ui
           .fill = colorSpecFromRole(ColorRole::Surface),
           .border = scaleAlpha(colorSpecFromRole(ColorRole::OutlineVariant), Style::disabledOutlineAlpha),
           .borderWidth = Style::borderWidth,
-          .radius = Style::scaledRadiusXl(scale),
+          .styleRadius = Style::radiusXl,
+          .styleRadiusScale = scale,
           .visible = layout.boxed,
           .participatesInLayout = false,
       })
@@ -2095,7 +2093,7 @@ void WindowSwitcher::buildScene(Instance& instance, std::uint32_t width, std::ui
   instance.showAppIcon = switcherConfig.showAppIcon;
   if (!m_windows.empty()) {
     for (std::size_t windowIndex = 0; windowIndex < m_windows.size(); ++windowIndex) {
-      auto tile = std::make_unique<WindowSwitcherTile>(scale, m_asyncTextures);
+      auto tile = std::make_unique<WindowSwitcherTile>(scale);
       WindowSwitcherTile* tilePtr = tile.get();
       const WindowSwitcherCardTarget& target = layout.cards[windowIndex];
       tile->setCardSize(target.width, target.height);
@@ -2139,7 +2137,8 @@ void WindowSwitcher::buildScene(Instance& instance, std::uint32_t width, std::ui
         .fill = colorSpecFromRole(ColorRole::Surface),
         .border = scaleAlpha(colorSpecFromRole(ColorRole::OutlineVariant), Style::disabledOutlineAlpha),
         .borderWidth = Style::borderWidth,
-        .radius = Style::scaledRadiusMd(scale),
+        .styleRadius = Style::radiusMd,
+        .styleRadiusScale = scale,
         .width = layout.countWidth,
         .height = layout.countHeight,
         .participatesInLayout = false,
@@ -2174,7 +2173,6 @@ void WindowSwitcher::buildScene(Instance& instance, std::uint32_t width, std::ui
   instance.sceneRoot->addChild(std::move(input));
   syncSelection(false);
   instance.sceneRoot->layout(renderer);
-  positionPanel(instance, w, h);
 
   instance.surface->setSceneRoot(instance.sceneRoot.get());
   instance.inputDispatcher.setSceneRoot(instance.sceneRoot.get());
@@ -2187,19 +2185,13 @@ void WindowSwitcher::buildScene(Instance& instance, std::uint32_t width, std::ui
     instance.inputDispatcher.setFocus(instance.input);
   }
 
-  if (!instance.revealStarted && instance.panel != nullptr && instance.dimmer != nullptr) {
+  if (!instance.revealStarted && instance.panel != nullptr) {
     instance.revealStarted = true;
-    instance.panel->setOpacity(0.0F);
     instance.panel->setScale(Style::windowSwitcherRevealScale);
-    instance.dimmer->setOpacity(0.0F);
     instance.animations.animate(
-        0.0F, 1.0F, Style::animNormal, Easing::EaseOutCubic,
-        [panelNode = instance.panel, dimmer = instance.dimmer](float value) {
-          panelNode->setOpacity(value);
-          panelNode->setScale(Style::windowSwitcherRevealScale + (1.0F - Style::windowSwitcherRevealScale) * value);
-          dimmer->setOpacity(Style::windowSwitcherDimOpacity * value);
-        },
-        {}, instance.panel
+        Style::windowSwitcherRevealScale, 1.0F, Style::animNormal, Easing::EaseOutCubic,
+        [panelNode = instance.panel](float value) { panelNode->setScale(value); }, {}, instance.panel
     );
   }
+  positionPanel(instance, w, h);
 }

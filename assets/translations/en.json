@@ -844,7 +844,8 @@
         "objects": "Objects",
         "people": "People",
         "symbols": "Symbols",
-        "travel": "Travel"
+        "travel": "Travel",
+        "unicode": "Unicode"
       },
       "recently-used": "Recently Used"
     },
@@ -935,7 +936,8 @@
   "notifications": {
     "actions": {
       "fallback": "Action",
-      "open": "Open"
+      "open": "Open",
+      "show-in-folder": "Show in folder"
     },
     "inline-reply": {
       "button": "Reply",
@@ -1182,7 +1184,9 @@
         "unset-placeholder": "Click to bind…"
       },
       "list": {
-        "add-entry-placeholder": "Add entry…"
+        "add-entry": "Add entry",
+        "add-entry-placeholder": "Add entry…",
+        "drag": "Reorder"
       },
       "path-browse": {
         "file-title": "Choose file",
@@ -1639,6 +1643,7 @@
         "window-switcher": "Window Switcher"
       },
       "layer": {
+        "auto": "Auto",
         "follow": "Follow",
         "overlay": "Overlay",
         "top": "Top"
@@ -1994,6 +1999,10 @@
           "description": "Font family for the shell interface",
           "label": "Font Family"
         },
+        "font-scale": {
+          "description": "Make all shell text larger or smaller without changing icons or spacing",
+          "label": "Font Scale"
+        },
         "global-shadow-alpha": {
           "description": "Global surface shadow opacity"
         },
@@ -2201,7 +2210,7 @@
           "label": "Hover Highlight"
         },
         "layer": {
-          "description": "Use Overlay to show the bar above fullscreen apps; attached panels follow the bar",
+          "description": "Top stays below fullscreen apps, Overlay stays above them, and Auto moves above only while an attached panel is open",
           "label": "Wayland Layer"
         },
         "opposite-edge-margin": {
@@ -4829,6 +4838,10 @@
           "description": "Hide inactive privacy icons and hide the widget when nothing is active",
           "label": "Hide Inactive"
         },
+        "hide-label-when-muted": {
+          "description": "Hide the volume percentage while the device is muted, leaving only the mute icon",
+          "label": "Hide Label When Muted"
+        },
         "hide-passive": {
           "description": "Hide tray items whose StatusNotifierItem status is Passive",
           "label": "Hide Passive Items"
@@ -4928,7 +4941,7 @@
           "label": "Interactive"
         },
         "interface": {
-          "description": "Network interface to monitor; leave empty to use the total across all interfaces",
+          "description": "Network interface to monitor; leave empty to use the total across physical interfaces",
           "label": "Interface"
         },
         "item-spacing": {

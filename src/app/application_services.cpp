@@ -2,6 +2,7 @@
 #include "application.h"
 #include "application_internal.h"
 #include "compositors/compositor_detect.h"
+#include "compositors/compositor_event_subscriptions.h"
 #include "compositors/umbriel/umbriel_audio_provider.h"
 #include "config/config_types.h"
 #include "core/deferred_call.h"
@@ -559,22 +560,14 @@ void Application::initStyleThemeAndWayland() {
     motion.setSpeed(m_configService.config().shell.animation.speed);
     motion.setEnabled(m_configService.config().shell.animation.enabled);
   };
-  auto applyStyleConfig = [this, lastCornerRadiusScale = std::numeric_limits<float>::quiet_NaN()] mutable {
-    const float corner = m_configService.config().shell.cornerRadiusScale;
-    const bool cornerChanged =
-        std::isfinite(lastCornerRadiusScale) && std::abs(corner - lastCornerRadiusScale) > 1.0e-4F;
-    Style::setCornerRadiusScale(corner);
+  auto applyStyleConfig = [this] {
+    Style::setCornerRadiusScale(m_configService.config().shell.cornerRadiusScale);
     Style::setButtonBordersEnabled(m_configService.config().shell.buttonBorders);
     Style::setInputBordersEnabled(m_configService.config().shell.inputBorders);
     Style::setPopupBordersEnabled(m_configService.config().shell.popupBorders);
     Style::setPopupShadowsEnabled(m_configService.config().shell.popupShadows);
     Style::setCardBordersEnabled(m_configService.config().shell.cardBorders);
     Style::setCloseButtonsEnabled(m_configService.config().shell.showCloseButtons);
-    lastCornerRadiusScale = corner;
-    if (cornerChanged) {
-      m_notificationToast.requestLayout();
-      m_panelManager.requestLayout();
-    }
   };
   auto applyPasswordMaskStyle = [this] {
     const auto style = m_configService.config().shell.passwordMaskStyle == PasswordMaskStyle::RandomIcons
@@ -589,6 +582,16 @@ void Application::initStyleThemeAndWayland() {
   applyStyleConfig();
   applyPasswordMaskStyle();
   applyInputConfig();
+  m_cornerRadiusConn = Style::cornerRadiusChanged().connect([this] {
+    // Radius changes need a repaint everywhere; panels, bar, and desktop widgets also
+    // recompute derived geometry or custom-node radii during layout.
+    m_bar.refresh();
+    m_desktopWidgetsController.requestLayout();
+    m_notificationToast.requestLayout();
+    m_osdOverlay.requestLayout();
+    m_panelManager.requestLayout();
+    m_panelManager.refresh();
+  });
   m_httpClient.setOfflineMode(m_configService.config().shell.offlineMode);
   m_scriptApi.setConfigSnapshot(m_configService.configTable());
   m_configService.addReloadCallback(applyMotionConfig);
@@ -724,6 +727,18 @@ void Application::initStyleThemeAndWayland() {
     m_pluginIdleWatches.unwatch(hostId, watchId);
   });
   m_scriptApi.setReleaseIdleWatchesHook([this](std::uint64_t hostId) { m_pluginIdleWatches.release(hostId); });
+  m_scriptApi.setCompositorSubscribeHook([this](
+                                             std::uint64_t hostId, int subscriptionId, std::vector<std::string> events,
+                                             scripting::ScriptApiContext::CompositorEventDelivery delivery
+                                         ) {
+    m_compositorPlatform.eventSubscriptions().subscribe(hostId, subscriptionId, std::move(events), std::move(delivery));
+  });
+  m_scriptApi.setCompositorUnsubscribeHook([this](std::uint64_t hostId, int subscriptionId) {
+    m_compositorPlatform.eventSubscriptions().unsubscribe(hostId, subscriptionId);
+  });
+  m_scriptApi.setReleaseCompositorSubscriptionsHook([this](std::uint64_t hostId) {
+    m_compositorPlatform.eventSubscriptions().release(hostId);
+  });
   m_scriptApi.setLayerCommandHook([this](
                                       scripting::PluginLayerCommand command, const std::string& entryId,
                                       const scripting::PluginLayerConfigPatch& patch
@@ -991,8 +1006,11 @@ void Application::initWaylandCallbacks() {
 void Application::initAuxServicesAndHooks() {
   auto shouldRefreshControlCenter = [this] { return m_panelManager.isOpenPanel("control-center"); };
 
-  m_hookManager.setCommandRunner([this](const std::string& command) { return runShellCommand(command); });
-  m_hookManager.setBlockingCommandRunner([this](const std::string& command) {
+  m_hookManager.setCommandRunner([this](const std::string& command, const std::vector<process::EnvOverride>& env) {
+    return runShellCommand(command, env);
+  });
+  // Blocking hooks (logout/reboot/shutdown) never carry env vars.
+  m_hookManager.setBlockingCommandRunner([this](const std::string& command, const std::vector<process::EnvOverride>&) {
     return runShellCommandBlocking(command);
   });
   m_hookManager.reload(m_configService.config().hooks);
@@ -1107,7 +1125,12 @@ void Application::initAuxServicesAndHooks() {
     m_backdrop.onThemeChanged();
     m_settingsWindow.onThemeChanged();
     scheduleGreeterAutoSync();
+    // Icons that follow the color scheme re-render once the palette settles, not on every fade frame.
+    if (!m_themeService.transitioning() && updateIconColorScheme()) {
+      refreshIconConsumers();
+    }
   });
+  updateIconColorScheme();
 
   if (const auto distro = DistroDetector::detect(); distro.has_value()) {
     const auto& label = !distro->prettyName.empty() ? distro->prettyName

@@ -299,9 +299,15 @@ wayland_scanner    = find_program('wayland-scanner')
 wayland_protos_dir = wayland_protos_dep.get_variable('pkgdatadir')
 
 # ── Compile arguments ─────────────────────────────────────────────────────────
+pam_service = get_option('pam_service')
+if pam_service == '' or pam_service.contains('/') or pam_service.contains('"') or pam_service.contains('\\')
+  error('pam_service must be a plain PAM service name, got "@0@"'.format(pam_service))
+endif
+
 _noctalia_compile_definitions = [
   '-DNOCTALIA_INSTALL_PREFIX="' + get_option('prefix') + '"',
   '-DNOCTALIA_INSTALL_DATADIR="' + get_option('datadir') + '"',
+  '-DNOCTALIA_PAM_HELPER="' + (get_option('prefix') / get_option('libexecdir') / 'noctalia' / 'noctalia-pam-helper') + '"',
   '-DNOCTALIA_VERSION="' + meson.project_version() + '"',
 ] + jemalloc_cpp_args
 
@@ -851,7 +857,6 @@ _noctalia_sources = files(
   'src/system/dependency_service.cpp',
   'src/system/v4l2_camera.cpp',
   'src/system/directory_scanner.cpp',
-  'src/system/file_watcher.cpp',
   'src/system/process.cpp',
   'src/system/desktop_entry.cpp',
   'src/system/freedesktop_key_file.cpp',
@@ -905,7 +910,9 @@ _noctalia_sources = files(
   'src/compositors/compositor_platform.cpp',
   'src/compositors/workspace_alert_service.cpp',
   'src/compositors/compositor_detect.cpp',
+  'src/compositors/compositor_event_subscriptions.cpp',
   'src/compositors/compositor_runtime.cpp',
+  'src/compositors/unix_socket.cpp',
   'src/compositors/dwl/dwl_workspace_backend.cpp',
   'src/compositors/ext_workspace/ext_workspace_output_backend.cpp',
   'src/compositors/ext_workspace/ext_workspace_backend.cpp',
@@ -1109,6 +1116,21 @@ install_subdir('lib/assets',
   install_dir: get_option('datadir') / 'noctalia',
 )
 
+# PAM runs in its own small executable so distributions can grant it the
+# privileges their PAM stack needs (e.g. setgid for a password-check helper)
+# without extending them to the shell. Keep its dependencies to libpam.
+executable('noctalia-pam-helper',
+  sources: files('src/auth/pam_helper_main.cpp'),
+  dependencies: [pam_dep],
+  include_directories: include_directories('src'),
+  cpp_args: [
+    '-Wall', '-Wextra', '-Wno-missing-field-initializers', '-Wpedantic', '-Wconversion', '-Wshadow',
+    '-DNOCTALIA_PAM_SERVICE="' + pam_service + '"',
+  ],
+  install: true,
+  install_dir: get_option('libexecdir') / 'noctalia',
+)
+
 install_subdir('assets',
   install_dir: get_option('datadir') / 'noctalia',
   exclude_files: ['dev.noctalia.Noctalia.desktop', 'dev.noctalia.Noctalia.Annotator.desktop', 'noctalia.service.in'],
@@ -1214,6 +1236,7 @@ if build_tests
     'bluetooth_uuid_names',
     'button_layout',
     'caldav_client',
+    'calendar_cache',
     'calendar_cache_permissions',
     'calendar_credential_store',
     'calendar_discovery_state',
@@ -1233,6 +1256,7 @@ if build_tests
     'config_path_resolution',
     'config_schema_roundtrip',
     'config_set_ipc',
+    'config_system_layer',
     'config_wallpaper_precedence',
     'config_widget',
     'context_menu_popup',
@@ -1267,6 +1291,7 @@ if build_tests
     'i18n_supported_languages',
     'ical_parser',
     'icon_resolver',
+    'icon_resolver_cache',
     'image_orientation',
     'ipc_service',
     'iwd_diagnostics',
@@ -1321,6 +1346,7 @@ if build_tests
     'secret_store',
     'security_primitives',
     'settings_search',
+    'smart_auto_hide',
     'state_store',
     'surface_blur_region',
     'sway_ipc',
@@ -1372,7 +1398,7 @@ if build_tests
         override_options: ['b_ndebug=false'],
       )
       test_args = []
-      if test_name in ['desktop_entry_localization', 'config_wallpaper_precedence']
+      if test_name in ['desktop_entry_localization', 'config_system_layer', 'config_wallpaper_precedence']
         test_args = [meson.project_source_root() / 'assets']
       elif test_name == 'i18n_supported_languages'
         test_args = [meson.project_source_root() / 'assets' / 'translations']

@@ -304,5 +304,23 @@
     "noctaliaVersion": null,
     "feature": "nightlight",
     "introduced": "`noctalia.nightlight` for reading and changing the shell's night-light state, plus `noctalia.nightlight.watch` for state changes without polling."
+  },
+  {
+    "level": 54,
+    "noctaliaVersion": null,
+    "feature": "compositor-subscribe",
+    "introduced": "`noctalia.compositor.name`, `noctalia.compositor.subscribe`, and `noctalia.compositor.unsubscribe` for reading the session compositor's event stream (Umbriel, niri, Hyprland) over a connection the shell opens per subscription, without spawning a process."
+  },
+  {
+    "level": 55,
+    "noctaliaVersion": null,
+    "feature": "ring",
+    "introduced": "`ui.ring`, a natively drawn circular progress gauge with `progress`, `fill`, `track`, and `thickness` props."
+  },
+  {
+    "level": 56,
+    "noctaliaVersion": null,
+    "feature": "notification-actions",
+    "introduced": "Action buttons on `noctalia.notify` and `noctalia.notifyError` through an options table (`actions`, `onAction`, `context`), plus `noctalia.openPath` and `noctalia.revealPath` for opening a file or showing it selected in the file manager."
   }
 ]

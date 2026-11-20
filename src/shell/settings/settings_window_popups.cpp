@@ -375,6 +375,7 @@ void SettingsWindow::openActionsMenu() {
           .entries = std::move(entries),
           .minMenuWidth = 220.0F * scale,
           .maxMenuWidth = Style::menuAutoMaxWidth * scale,
+          .textScale = m_textScale,
           .maxVisible = 8,
           .anchor =
               PopupAnchorRect{
@@ -430,6 +431,7 @@ void SettingsWindow::openBarWidgetAddPopup(const std::vector<std::string>& laneP
   if (m_widgetAddPopup == nullptr) {
     m_widgetAddPopup = std::make_unique<settings::WidgetAddPopup>();
     m_widgetAddPopup->initialize(*m_wayland, *m_config, *m_renderContext);
+    m_widgetAddPopup->setTextScale(m_textScale);
     m_widgetAddPopup->setOnSelect([this](
                                       const std::vector<std::string>& selectedLanePath, const std::string& value,
                                       const std::string& newInstanceType, const std::string& newInstanceId,
@@ -493,6 +495,7 @@ void SettingsWindow::openSearchPickerPopup(settings::SearchPickerOpenRequest req
   if (m_searchPickerPopup == nullptr) {
     m_searchPickerPopup = std::make_unique<SearchPickerPopup>();
     m_searchPickerPopup->initialize(*m_wayland, dialogPopupSettings(*m_config), *m_renderContext);
+    m_searchPickerPopup->setTextScale(m_textScale);
   }
 
   if (m_widgetAddPopup != nullptr && m_widgetAddPopup->isOpen()) {
@@ -525,8 +528,9 @@ void SettingsWindow::openSearchPickerPopup(settings::SearchPickerOpenRequest req
             .value = opt.value,
             .label = opt.label,
             .description = opt.description,
+            .group = opt.group,
             .enabled = true,
-            .icon = {},
+            .icon = opt.icon,
             .preview = opt.preview,
         }
     );
@@ -692,7 +696,8 @@ void SettingsWindow::openMonitorOverrideCreateDialog(std::optional<std::string> 
                 .minHeight = Style::controlHeight * scale,
                 .paddingV = Style::spaceXs * scale,
                 .paddingH = Style::spaceMd * scale,
-                .radius = Style::scaledRadiusMd(scale),
+                .styleRadius = Style::radiusMd,
+                .styleRadiusScale = scale,
                 .onClick = std::move(onSelect),
             })
         );
@@ -738,7 +743,8 @@ void SettingsWindow::openMonitorOverrideCreateDialog(std::optional<std::string> 
                 .minHeight = Style::controlHeight * scale,
                 .paddingV = Style::spaceXs * scale,
                 .paddingH = Style::spaceMd * scale,
-                .radius = Style::scaledRadiusMd(scale),
+                .styleRadius = Style::radiusMd,
+                .styleRadiusScale = scale,
                 .onClick =
                     [this] {
                       if (m_editorSheetModal != nullptr) {
@@ -753,7 +759,8 @@ void SettingsWindow::openMonitorOverrideCreateDialog(std::optional<std::string> 
                 .minHeight = Style::controlHeight * scale,
                 .paddingV = Style::spaceXs * scale,
                 .paddingH = Style::spaceMd * scale,
-                .radius = Style::scaledRadiusMd(scale),
+                .styleRadius = Style::radiusMd,
+                .styleRadiusScale = scale,
                 .onClick = doCreate,
             })
         )
@@ -1656,7 +1663,8 @@ void SettingsWindow::openCalendarAccountEditor(std::optional<std::string> accoun
           .gap = Style::spaceXs * scale,
           .padding = Style::spaceSm * scale,
           .fill = colorSpecFromRole(ColorRole::SurfaceContainerLow),
-          .radius = Style::scaledRadiusMd(scale),
+          .styleRadius = Style::radiusMd,
+          .styleRadiusScale = scale,
       });
       for (const CalendarSource& source : draft->discoveredCalendars) {
         const bool checked = calendarSourceChecked(*draft, source);
@@ -1933,7 +1941,8 @@ void SettingsWindow::openCalendarAccountEditor(std::optional<std::string> accoun
             .variant = ButtonVariant::Secondary,
             .minHeight = Style::controlHeight * scale,
             .paddingH = Style::spaceMd * scale,
-            .radius = Style::scaledRadiusMd(scale),
+            .styleRadius = Style::radiusMd,
+            .styleRadiusScale = scale,
             .onClick = [this] {
               if (m_editorSheetModal != nullptr) {
                 m_editorSheetModal->close();
@@ -1950,7 +1959,8 @@ void SettingsWindow::openCalendarAccountEditor(std::optional<std::string> accoun
               .variant = ButtonVariant::Secondary,
               .minHeight = Style::controlHeight * scale,
               .paddingH = Style::spaceMd * scale,
-              .radius = Style::scaledRadiusMd(scale),
+              .styleRadius = Style::radiusMd,
+              .styleRadiusScale = scale,
               .onClick = [persistAccount] { persistAccount(true, false); },
           })
       );
@@ -1963,7 +1973,8 @@ void SettingsWindow::openCalendarAccountEditor(std::optional<std::string> accoun
             .variant = ButtonVariant::Primary,
             .minHeight = Style::controlHeight * scale,
             .paddingH = Style::spaceMd * scale,
-            .radius = Style::scaledRadiusMd(scale),
+            .styleRadius = Style::radiusMd,
+            .styleRadiusScale = scale,
             .onClick = [persistAccount, google] { persistAccount(true, google); },
         })
     );
@@ -2505,7 +2516,8 @@ void SettingsWindow::openPluginStore() {
                     .minWidth = Style::controlHeightSm * scale,
                     .minHeight = Style::controlHeightSm * scale,
                     .padding = Style::spaceXs * scale,
-                    .radius = Style::scaledRadiusMd(scale),
+                    .styleRadius = Style::radiusMd,
+                    .styleRadiusScale = scale,
                     .onClick = [storeContent] { storeContent->closeDetail(); },
                 });
               },
@@ -2526,7 +2538,8 @@ void SettingsWindow::openPluginStore() {
                           .minWidth = Style::controlHeightSm * scale,
                           .minHeight = Style::controlHeightSm * scale,
                           .padding = Style::spaceXs * scale,
-                          .radius = Style::scaledRadiusMd(scale),
+                          .styleRadius = Style::radiusMd,
+                          .styleRadiusScale = scale,
                           .onClick = [this, url = *pageUrl] { openBrowserUrl(url); },
                       })
                   );
@@ -2541,7 +2554,8 @@ void SettingsWindow::openPluginStore() {
                           .minWidth = Style::controlHeightSm * scale,
                           .minHeight = Style::controlHeightSm * scale,
                           .padding = Style::spaceXs * scale,
-                          .radius = Style::scaledRadiusMd(scale),
+                          .styleRadius = Style::radiusMd,
+                          .styleRadiusScale = scale,
                           .onClick = [this, url = *sourceUrl] { openBrowserUrl(url); },
                       })
                   );
@@ -2560,7 +2574,7 @@ void SettingsWindow::openPluginStore() {
                           )
                       );
                     }
-                    storeContent->populateBody(body, m_surface->renderTarget().renderer(), m_asyncTextures);
+                    storeContent->populateBody(body, m_surface->renderTarget().renderer());
                   },
               .scale = scale,
               .minWidth = 800.0F,

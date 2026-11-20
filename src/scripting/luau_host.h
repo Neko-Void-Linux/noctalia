@@ -27,10 +27,14 @@ struct HttpRequest;
 namespace process {
   struct RunResult;
 }
+namespace compositors {
+  struct CompositorEventPayload;
+} // namespace compositors
 namespace scripting {
   class ScriptApiContext;
   struct PluginBindingContext;
   struct ScriptNightLightState;
+  struct ScriptNotifyActions;
   enum class ScriptNightLightCommand : std::uint8_t;
 } // namespace scripting
 
@@ -223,8 +227,12 @@ public:
   void scriptSetUpdateInterval(int ms);
   [[nodiscard]] bool scriptLoadSound(std::string name, std::string path, int callbackRef);
   void scriptPlaySound(std::string name);
-  void scriptNotifyInfo(std::string title, std::string body);
-  void scriptNotifyError(std::string title, std::string body);
+  // Actions are honored only inside a runtime call: without one there is no runtime to route a click back to.
+  void scriptNotifyInfo(std::string title, std::string body, scripting::ScriptNotifyActions actions);
+  void scriptNotifyError(std::string title, std::string body, scripting::ScriptNotifyActions actions);
+  // `path` is already resolved. Inside a notification action callback the click's activation token is forwarded.
+  void scriptOpenPath(std::string path);
+  void scriptRevealPath(std::string path);
   void scriptShowOsd(std::string icon, std::string value, std::optional<double> progress, bool inactive);
   // Toggle the host wallpaper surface on an output. Queued as a side effect and
   // applied on the main thread (Wallpaper is not worker-thread safe).
@@ -244,6 +252,15 @@ public:
   [[nodiscard]] bool scriptIdleUnwatch(int watchId);
   bool callIdleWatchCallback(int callbackRef, bool idle, std::chrono::milliseconds budget);
   bool hasIdleWatchCallback(int callbackRef) const;
+  // noctalia.compositor.subscribe()/unsubscribe(): the session compositor's event stream over a connection the shell
+  // opens per subscription. Queued as side effects like idle; `data` is null for the "reset" event.
+  [[nodiscard]] bool scriptCompositorSubscribe(std::vector<std::string> events, int callbackRef);
+  [[nodiscard]] bool scriptCompositorUnsubscribe(int subscriptionId);
+  bool callCompositorEventCallback(
+      int callbackRef, const std::string& event, const compositors::CompositorEventPayload* data,
+      std::chrono::milliseconds budget
+  );
+  bool hasCompositorSubscriptionCallback(int callbackRef) const;
   // noctalia.nightlight.*: actions and watches are queued as side effects, like idle.
   void scriptNightLightCommand(scripting::ScriptNightLightCommand command, bool value);
   [[nodiscard]] bool scriptNightLightWatch(int callbackRef);
@@ -339,6 +356,7 @@ private:
   std::unordered_map<int, std::string> m_soundLoadCallbacks;
   std::unordered_set<int> m_idleWatchCallbackRefs;
   std::unordered_set<int> m_nightLightWatchCallbackRefs;
+  std::unordered_set<int> m_compositorSubscriptionCallbackRefs;
   HttpClient* m_httpClient = nullptr;
   AsyncCommandResultHandler m_asyncCommandResultHandler;
   AsyncFileResultHandler m_asyncFileResultHandler;

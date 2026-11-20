@@ -6,6 +6,7 @@
 #include "shell/switcher/window_switcher_style.h"
 #include "system/window_state.h"
 #include "ui/palette.h"
+#include "ui/signal.h"
 
 #include <cstdint>
 #include <functional>
@@ -13,7 +14,6 @@
 #include <optional>
 #include <string>
 
-class AsyncTextureCache;
 class Box;
 class Button;
 class Flex;
@@ -49,7 +49,7 @@ struct WindowSwitcherEntry {
 // Preview card shared by window-switcher presentation styles.
 class WindowSwitcherTile : public InputArea {
 public:
-  WindowSwitcherTile(float contentScale, AsyncTextureCache* asyncTextures);
+  explicit WindowSwitcherTile(float contentScale);
 
   void setCardSize(float width, float height);
   void setShadowStyle(const RoundedRectStyle& style);
@@ -71,6 +71,7 @@ private:
   bool refreshIcon(Renderer& renderer);
   void setPointerHovered(bool hovered);
   void applyVisualState();
+  void applyPreviewRadius();
   void layoutContent(Renderer& renderer);
 
 protected:
@@ -79,6 +80,7 @@ protected:
   float m_contentScale = 1.0F;
   float m_cardWidth = 0.0F;
   float m_cardHeight = 0.0F;
+  Signal<>::ScopedConnection m_radiusConn;
 
   Box* m_shadow = nullptr;
   Box* m_frame = nullptr;
@@ -111,7 +113,6 @@ protected:
   std::string m_iconPath;
   int m_iconTargetSize = 0;
   std::shared_ptr<const ScreencopyImage> m_thumbnailImage;
-  AsyncTextureCache* m_asyncTextures = nullptr;
   std::optional<ColorSpec> m_appIconColorizeTint;
   std::function<void()> m_onInvalidate;
   std::function<void()> m_onActivate;

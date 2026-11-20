@@ -1,5 +1,7 @@
 #include "scripting/luau_host.h"
 
+#include "compositors/compositor_detect.h"
+#include "compositors/compositor_event_subscriptions.h"
 #include "compositors/compositor_platform.h"
 #include "compositors/umbriel/umbriel_runtime.h"
 #include "core/deferred_call.h"
@@ -9,6 +11,7 @@
 #include "luacode.h"
 #include "lualib.h"
 #include "net/http_client.h"
+#include "net/url_open.h"
 #include "notification/notifications.h"
 #include "render/core/color.h"
 #include "render/text/font_registry.h"
@@ -81,6 +84,11 @@ namespace {
   constexpr std::size_t kMaxIdleWatchesPerHost = 8;
   constexpr std::size_t kMaxNightLightWatchesPerHost = 8;
   constexpr std::size_t kMaxPendingUmbrielActionsPerHost = 16;
+  // noctalia.notify options; the same limits as panel.openContextMenu items.
+  constexpr std::size_t kNotifyMaxActionIdBytes = 128;
+  constexpr std::size_t kNotifyMaxActionLabelBytes = 512;
+  constexpr std::size_t kNotifyMaxCallbackBytes = 128;
+  constexpr std::size_t kMaxCompositorSubscriptionsPerHost = 4;
   // Matches the reply timeout of `umbriel msg`.
   constexpr auto kUmbrielActionTimeout = std::chrono::seconds(2);
   constexpr double kMaxIdleWatchSeconds = static_cast<double>(std::numeric_limits<std::uint32_t>::max()) / 1000.0;
@@ -846,11 +854,95 @@ namespace {
     return 1;
   }
 
+  // Reads a string field of the table at `tableIndex` that must hold 1..maxBytes bytes.
+  std::string requiredNotifyStringField(
+      lua_State* L, int tableIndex, const char* field, std::size_t maxBytes, const char* api, const std::string& what
+  ) {
+    lua_getfield(L, tableIndex, field);
+    std::size_t len = 0;
+    const char* value = lua_type(L, -1) == LUA_TSTRING ? lua_tolstring(L, -1, &len) : nullptr;
+    if (value == nullptr || len == 0 || len > maxBytes) {
+      luaL_error(L, "%s: %s must contain 1..%zu bytes", api, what.c_str(), maxBytes);
+    }
+    std::string out(value, len);
+    lua_pop(L, 1);
+    return out;
+  }
+
+  // Reads the optional options table of noctalia.notify/notifyError at `index`.
+  scripting::ScriptNotifyActions readNotifyOptions(lua_State* L, int index, const char* api) {
+    scripting::ScriptNotifyActions out;
+    if (lua_isnoneornil(L, index)) {
+      return out;
+    }
+    luaL_checktype(L, index, LUA_TTABLE);
+
+    lua_getfield(L, index, "actions");
+    const int actionTable = lua_gettop(L);
+    const int actionCount = lua_istable(L, actionTable) ? lua_objlen(L, actionTable) : 0;
+    if (actionCount < 1 || actionCount > static_cast<int>(kMaxNotificationActions)) {
+      luaL_error(
+          L, "%s: options.actions must be an array of 1..%d actions", api, static_cast<int>(kMaxNotificationActions)
+      );
+    }
+    out.actions.reserve(static_cast<std::size_t>(actionCount) * 2);
+    for (int i = 1; i <= actionCount; ++i) {
+      lua_rawgeti(L, actionTable, i);
+      if (!lua_istable(L, -1)) {
+        luaL_error(L, "%s: actions[%d] must be a table", api, i);
+      }
+      const int actionIndex = lua_gettop(L);
+      std::string id = requiredNotifyStringField(
+          L, actionIndex, "id", kNotifyMaxActionIdBytes, api, std::format("actions[{}].id", i)
+      );
+      if (id == "inline-reply") {
+        luaL_error(L, "%s: actions[%d].id \"inline-reply\" is reserved", api, i);
+      }
+      for (std::size_t existing = 0; existing < out.actions.size(); existing += 2) {
+        if (out.actions[existing] == id) {
+          luaL_error(L, "%s: duplicate action id \"%s\"", api, id.c_str());
+        }
+      }
+      std::string label = requiredNotifyStringField(
+          L, actionIndex, "label", kNotifyMaxActionLabelBytes, api, std::format("actions[{}].label", i)
+      );
+      out.actions.push_back(std::move(id));
+      out.actions.push_back(std::move(label));
+      lua_pop(L, 1);
+    }
+    lua_pop(L, 1);
+
+    out.onAction = requiredNotifyStringField(L, index, "onAction", kNotifyMaxCallbackBytes, api, "options.onAction");
+
+    lua_getfield(L, index, "context");
+    switch (lua_type(L, -1)) {
+    case LUA_TNIL:
+      break;
+    case LUA_TBOOLEAN:
+      out.context = lua_toboolean(L, -1) != 0;
+      break;
+    case LUA_TNUMBER:
+      out.context = lua_tonumber(L, -1);
+      break;
+    case LUA_TSTRING: {
+      std::size_t len = 0;
+      const char* value = lua_tolstring(L, -1, &len);
+      out.context = std::string(value, len);
+      break;
+    }
+    default:
+      luaL_error(L, "%s: options.context must be a string, number, boolean, or nil", api);
+    }
+    lua_pop(L, 1);
+    return out;
+  }
+
   int luau_notify(lua_State* L) {
     const char* title = luaL_checkstring(L, 1);
     const char* body = luaL_optstring(L, 2, "");
+    scripting::ScriptNotifyActions actions = readNotifyOptions(L, 3, "noctalia.notify");
     if (auto* host = hostForState(L)) {
-      host->scriptNotifyInfo(title, body);
+      host->scriptNotifyInfo(title, body, std::move(actions));
     } else {
       notify::info("Noctalia", title, body);
     }
@@ -860,8 +952,9 @@ namespace {
   int luau_notifyError(lua_State* L) {
     const char* title = luaL_checkstring(L, 1);
     const char* body = luaL_optstring(L, 2, "");
+    scripting::ScriptNotifyActions actions = readNotifyOptions(L, 3, "noctalia.notifyError");
     if (auto* host = hostForState(L)) {
-      host->scriptNotifyError(title, body);
+      host->scriptNotifyError(title, body, std::move(actions));
     } else {
       notify::error("Noctalia", title, body);
     }
@@ -1087,6 +1180,30 @@ namespace {
       return std::filesystem::path(path);
     }
     return host->pluginDir() / path;
+  }
+
+  int luau_openPath(lua_State* L) {
+    std::size_t len = 0;
+    const char* path = luaL_checklstring(L, 1, &len);
+    if (len == 0) {
+      luaL_error(L, "noctalia.openPath: path must not be empty");
+    }
+    if (auto* host = hostForState(L)) {
+      host->scriptOpenPath(resolveHostPath(host, std::string_view(path, len)).string());
+    }
+    return 0;
+  }
+
+  int luau_revealPath(lua_State* L) {
+    std::size_t len = 0;
+    const char* path = luaL_checklstring(L, 1, &len);
+    if (len == 0) {
+      luaL_error(L, "noctalia.revealPath: path must not be empty");
+    }
+    if (auto* host = hostForState(L)) {
+      host->scriptRevealPath(resolveHostPath(host, std::string_view(path, len)).string());
+    }
+    return 0;
   }
 
   // Names the binding the CPU deadline was crossed inside, for the overrun message only.
@@ -2046,6 +2163,90 @@ namespace {
       {nullptr, nullptr},
   };
 
+  // noctalia.compositor.name() -> string: the detected session compositor ("umbriel", "niri", "hyprland", ...).
+  int luau_compositor_name(lua_State* L) {
+    const std::string_view name = compositors::id(compositors::detect());
+    lua_pushlstring(L, name.data(), name.size());
+    return 1;
+  }
+
+  // Umbriel streams only the families it is asked for, so options.events must be a non-empty array of names.
+  std::vector<std::string> compositorSubscribeEventsFromLua(lua_State* L) {
+    if (lua_isnoneornil(L, 1)) {
+      luaL_argerror(L, 1, "options.events is required on Umbriel");
+    }
+    lua_getfield(L, 1, "events");
+    if (!lua_istable(L, -1) || lua_objlen(L, -1) == 0) {
+      luaL_argerror(L, 1, "options.events must be a non-empty array of event names");
+    }
+    const int eventsIdx = lua_gettop(L);
+    const int count = lua_objlen(L, eventsIdx);
+    std::vector<std::string> events;
+    events.reserve(static_cast<std::size_t>(count));
+    for (int i = 1; i <= count; ++i) {
+      lua_rawgeti(L, eventsIdx, i);
+      if (lua_type(L, -1) != LUA_TSTRING) {
+        luaL_error(L, "noctalia.compositor.subscribe: options.events[%d] must be a string", i);
+      }
+      size_t len = 0;
+      const char* value = lua_tolstring(L, -1, &len);
+      events.emplace_back(value, len);
+      lua_pop(L, 1);
+    }
+    lua_pop(L, 1);
+    return events;
+  }
+
+  // noctalia.compositor.subscribe(options?, callback) -> id or nil. `callback(event, data)` receives every message on
+  // a compositor event-stream connection the shell opens for this subscription, ("error", message) when Umbriel
+  // rejects it, and ("reset", nil) whenever the connection drops before it reconnects. nil on compositors without an
+  // event stream.
+  int luau_compositor_subscribe(lua_State* L) {
+    if (!lua_isnoneornil(L, 1)) {
+      luaL_checktype(L, 1, LUA_TTABLE);
+    }
+    luaL_checktype(L, 2, LUA_TFUNCTION);
+    const compositors::CompositorKind kind = compositors::detect();
+    if (!compositors::supportsEventSubscriptions(kind)) {
+      lua_pushnil(L);
+      return 1;
+    }
+    std::vector<std::string> events;
+    if (kind == compositors::CompositorKind::Umbriel) {
+      events = compositorSubscribeEventsFromLua(L);
+    }
+    auto* host = hostForState(L);
+    if (host == nullptr) {
+      lua_pushnil(L);
+      return 1;
+    }
+    const int callbackRef = lua_ref(L, 2);
+    if (!host->scriptCompositorSubscribe(std::move(events), callbackRef)) {
+      lua_unref(L, callbackRef);
+      luaL_error(
+          L, "noctalia.compositor.subscribe: at most %d subscriptions per entry",
+          static_cast<int>(kMaxCompositorSubscriptionsPerHost)
+      );
+    }
+    lua_pushinteger(L, callbackRef);
+    return 1;
+  }
+
+  // noctalia.compositor.unsubscribe(id) -> bool (false when the id is not an active subscription)
+  int luau_compositor_unsubscribe(lua_State* L) {
+    const int subscriptionId = luaL_checkinteger(L, 1);
+    auto* host = hostForState(L);
+    lua_pushboolean(L, host != nullptr && host->scriptCompositorUnsubscribe(subscriptionId) ? 1 : 0);
+    return 1;
+  }
+
+  const luaL_Reg kNoctaliaCompositorLib[] = {
+      {"name", luau_compositor_name},
+      {"subscribe", luau_compositor_subscribe},
+      {"unsubscribe", luau_compositor_unsubscribe},
+      {nullptr, nullptr},
+  };
+
   // noctalia.layer.*: show, hide, and configure this plugin's [[layer]] entries.
 
   constexpr std::int64_t kMaxLayerExtent = 1 << 16;
@@ -2320,6 +2521,8 @@ namespace {
       {"wallpaperDirectory", luau_wallpaperDirectory},
       {"notify", luau_notify},
       {"notifyError", luau_notifyError},
+      {"openPath", luau_openPath},
+      {"revealPath", luau_revealPath},
       {"copyToClipboard", luau_copyToClipboard},
       {"clipboardText", luau_clipboardText},
       {"calendarEvents", luau_calendarEvents},
@@ -2393,6 +2596,10 @@ namespace {
     lua_createtable(L, 0, 0);
     luaL_register(L, nullptr, kNoctaliaUmbrielLib);
     lua_setfield(L, -2, "umbriel");
+    // noctalia.compositor = { name, subscribe, unsubscribe }
+    lua_createtable(L, 0, 0);
+    luaL_register(L, nullptr, kNoctaliaCompositorLib);
+    lua_setfield(L, -2, "compositor");
     lua_pop(L, 1);
   }
 } // namespace
@@ -2519,6 +2726,7 @@ LuauHost::~LuauHost() {
   auto unloadPluginSounds = m_api.unloadPluginSoundsHook();
   auto clearWallpaperMasks = m_api.clearWallpaperMasksHook();
   auto releaseIdleWatches = m_api.releaseIdleWatchesHook();
+  auto releaseCompositorSubscriptions = m_api.releaseCompositorSubscriptionsHook();
   m_api.releaseNightLightWatches(m_hostId);
   // Terminate any long-lived stream subprocesses and HTTP streams before tearing
   // down the state.
@@ -2582,6 +2790,10 @@ LuauHost::~LuauHost() {
         lua_unref(m_thread, callbackRef);
       }
       m_umbrielActionCallbackRefs.clear();
+      for (int callbackRef : m_compositorSubscriptionCallbackRefs) {
+        lua_unref(m_thread, callbackRef);
+      }
+      m_compositorSubscriptionCallbackRefs.clear();
     }
     if (m_threadRef != -1) {
       lua_unref(m_mainState, m_threadRef);
@@ -2602,6 +2814,10 @@ LuauHost::~LuauHost() {
     DeferredCall::callLater([releaseIdleWatches = std::move(releaseIdleWatches), hostId = m_hostId] mutable {
       releaseIdleWatches(hostId);
     });
+  }
+  if (releaseCompositorSubscriptions) {
+    DeferredCall::callLater([releaseCompositorSubscriptions = std::move(releaseCompositorSubscriptions),
+                             hostId = m_hostId] mutable { releaseCompositorSubscriptions(hostId); });
   }
 }
 
@@ -3405,24 +3621,58 @@ void LuauHost::scriptLog(std::string message) {
   kLog.info("{}", message);
 }
 
-void LuauHost::scriptNotifyInfo(std::string title, std::string body) {
+void LuauHost::scriptNotifyInfo(std::string title, std::string body, scripting::ScriptNotifyActions actions) {
   if (m_scriptContext != nullptr) {
     m_scriptContext->sideEffects.push_back(
-        {.kind = scripting::ScriptSideEffectKind::NotifyInfo, .title = std::move(title), .body = std::move(body)}
+        {.kind = scripting::ScriptSideEffectKind::NotifyInfo,
+         .title = std::move(title),
+         .body = std::move(body),
+         .extra = std::move(actions.onAction),
+         .notificationActions = std::move(actions.actions),
+         .notificationContext = std::move(actions.context)}
     );
     return;
   }
   notify::info("Noctalia", title, body);
 }
 
-void LuauHost::scriptNotifyError(std::string title, std::string body) {
+void LuauHost::scriptNotifyError(std::string title, std::string body, scripting::ScriptNotifyActions actions) {
   if (m_scriptContext != nullptr) {
     m_scriptContext->sideEffects.push_back(
-        {.kind = scripting::ScriptSideEffectKind::NotifyError, .title = std::move(title), .body = std::move(body)}
+        {.kind = scripting::ScriptSideEffectKind::NotifyError,
+         .title = std::move(title),
+         .body = std::move(body),
+         .extra = std::move(actions.onAction),
+         .notificationActions = std::move(actions.actions),
+         .notificationContext = std::move(actions.context)}
     );
     return;
   }
   notify::error("Noctalia", title, body);
+}
+
+void LuauHost::scriptOpenPath(std::string path) {
+  if (m_scriptContext != nullptr) {
+    m_scriptContext->sideEffects.push_back(
+        {.kind = scripting::ScriptSideEffectKind::OpenPath,
+         .title = std::move(path),
+         .extra = m_scriptContext->snapshot.activationToken}
+    );
+    return;
+  }
+  (void)net::openFile(path);
+}
+
+void LuauHost::scriptRevealPath(std::string path) {
+  if (m_scriptContext != nullptr) {
+    m_scriptContext->sideEffects.push_back(
+        {.kind = scripting::ScriptSideEffectKind::RevealPath,
+         .title = std::move(path),
+         .extra = m_scriptContext->snapshot.activationToken}
+    );
+    return;
+  }
+  (void)net::revealFile(path);
 }
 
 bool LuauHost::scriptLoadSound(std::string name, std::string path, int callbackRef) {
@@ -3576,6 +3826,67 @@ bool LuauHost::callIdleWatchCallback(int callbackRef, bool idle, std::chrono::mi
   }
   lua_pushboolean(m_thread, idle ? 1 : 0);
   return callWithBudget("idle watch callback", 1, 0, budget);
+}
+
+bool LuauHost::scriptCompositorSubscribe(std::vector<std::string> events, int callbackRef) {
+  if (m_scriptContext == nullptr
+      || callbackRef <= LUA_REFNIL
+      || m_compositorSubscriptionCallbackRefs.size() >= kMaxCompositorSubscriptionsPerHost) {
+    return false;
+  }
+  m_compositorSubscriptionCallbackRefs.insert(callbackRef);
+  m_scriptContext->sideEffects.push_back({
+      .kind = scripting::ScriptSideEffectKind::CompositorSubscribe,
+      .hostId = m_hostId,
+      .callbackRef = callbackRef,
+      .compositorEvents = std::move(events),
+  });
+  return true;
+}
+
+bool LuauHost::scriptCompositorUnsubscribe(int subscriptionId) {
+  if (m_scriptContext == nullptr
+      || m_thread == nullptr
+      || m_compositorSubscriptionCallbackRefs.erase(subscriptionId) == 0) {
+    return false;
+  }
+  lua_unref(m_thread, subscriptionId);
+  m_scriptContext->sideEffects.push_back(
+      {.kind = scripting::ScriptSideEffectKind::CompositorUnsubscribe,
+       .hostId = m_hostId,
+       .callbackRef = subscriptionId}
+  );
+  return true;
+}
+
+bool LuauHost::hasCompositorSubscriptionCallback(int callbackRef) const {
+  return m_compositorSubscriptionCallbackRefs.contains(callbackRef);
+}
+
+bool LuauHost::callCompositorEventCallback(
+    int callbackRef, const std::string& event, const compositors::CompositorEventPayload* data,
+    std::chrono::milliseconds budget
+) {
+  if (m_thread == nullptr || !m_compositorSubscriptionCallbackRefs.contains(callbackRef)) {
+    return false;
+  }
+  // Subscription callbacks fire repeatedly; the ref lives until unsubscribe() or host teardown.
+  lua_getref(m_thread, callbackRef);
+  if (!lua_isfunction(m_thread, -1)) {
+    lua_pop(m_thread, 1);
+    return false;
+  }
+  lua_pushlstring(m_thread, event.data(), event.size());
+  if (data == nullptr) {
+    lua_pushnil(m_thread);
+  } else if (const auto* json = std::get_if<nlohmann::json>(&data->value); json != nullptr) {
+    jsonToLua(m_thread, *json);
+  } else if (const auto* text = std::get_if<std::string>(&data->value); text != nullptr) {
+    lua_pushlstring(m_thread, text->data(), text->size());
+  } else {
+    lua_pushnil(m_thread);
+  }
+  return callWithBudget("compositor event callback", 2, 0, budget);
 }
 
 void LuauHost::scriptNightLightCommand(scripting::ScriptNightLightCommand command, bool value) {

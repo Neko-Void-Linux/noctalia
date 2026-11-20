@@ -215,8 +215,7 @@ namespace {
 
   class LauncherResultRow final : public Node {
   public:
-    LauncherResultRow(LauncherListStyle style, AsyncTextureCache* asyncTextures)
-        : m_style(style), m_asyncTextures(asyncTextures) {
+    explicit LauncherResultRow(LauncherListStyle style) : m_style(style) {
       const float iconSize = launcherIconSize(m_style);
       const float gap = (m_style.compact ? Style::spaceSm : Style::spaceMd) * m_style.scale;
       const float paddingV = (m_style.compact ? Style::spaceXs * 0.5F : Style::spaceXs) * m_style.scale;
@@ -226,7 +225,8 @@ namespace {
            .gap = gap,
            .paddingV = paddingV,
            .paddingH = Style::spaceSm * m_style.scale,
-           .radius = Style::scaledRadiusMd(m_style.scale)}
+           .styleRadius = Style::radiusMd,
+           .styleRadiusScale = m_style.scale}
       );
       addChild(std::move(row));
 
@@ -423,12 +423,7 @@ namespace {
 
       m_image->setAppIconColorization(m_isAppIcon ? m_style.appIconColorizeTint : std::nullopt);
 
-      bool ready = false;
-      if (m_asyncTextures != nullptr) {
-        ready = m_image->setSourceFileAsync(renderer, *m_asyncTextures, m_iconPath, m_iconTargetSize, true);
-      } else {
-        ready = m_image->setSourceFile(renderer, m_iconPath, m_iconTargetSize, true);
-      }
+      const bool ready = m_image->setSourceFile(renderer, m_iconPath, {.targetSize = m_iconTargetSize, .mipmap = true});
 
       m_image->setSize(launcherIconSize(m_style), launcherIconSize(m_style));
       m_image->setVisible(ready);
@@ -487,7 +482,6 @@ namespace {
     Label* m_subtitle = nullptr;
     Glyph* m_pinnedGlyph = nullptr;
     Glyph* m_originGlyph = nullptr;
-    AsyncTextureCache* m_asyncTextures = nullptr;
     std::string m_iconPath;
     std::string m_fallbackGlyph;
     int m_iconTargetSize = 0;
@@ -498,8 +492,7 @@ namespace {
 
   class LauncherAppGridTile final : public Node {
   public:
-    LauncherAppGridTile(LauncherListStyle style, AsyncTextureCache* asyncTextures)
-        : m_style(style), m_asyncTextures(asyncTextures) {
+    explicit LauncherAppGridTile(LauncherListStyle style) : m_style(style) {
       const float gap = Style::spaceXs * m_style.scale;
       const float padding = Style::spaceSm * m_style.scale;
       auto col = ui::column({
@@ -508,7 +501,8 @@ namespace {
           .gap = gap,
           .paddingV = padding,
           .paddingH = padding,
-          .radius = Style::scaledRadiusMd(m_style.scale),
+          .styleRadius = Style::radiusMd,
+          .styleRadiusScale = m_style.scale,
           .fillWidth = true,
           .fillHeight = true,
       });
@@ -680,12 +674,7 @@ namespace {
 
       m_image->setAppIconColorization(m_isAppIcon ? m_style.appIconColorizeTint : std::nullopt);
 
-      bool ready = false;
-      if (m_asyncTextures != nullptr) {
-        ready = m_image->setSourceFileAsync(renderer, *m_asyncTextures, m_iconPath, m_iconTargetSize, true);
-      } else {
-        ready = m_image->setSourceFile(renderer, m_iconPath, m_iconTargetSize, true);
-      }
+      const bool ready = m_image->setSourceFile(renderer, m_iconPath, {.targetSize = m_iconTargetSize, .mipmap = true});
 
       const float iconSize = launcherIconSize(m_style);
       m_image->setSize(iconSize, iconSize);
@@ -744,7 +733,6 @@ namespace {
     Glyph* m_pinnedGlyph = nullptr;
     Glyph* m_originGlyph = nullptr;
     Label* m_title = nullptr;
-    AsyncTextureCache* m_asyncTextures = nullptr;
     std::string m_iconPath;
     std::string m_fallbackGlyph;
     int m_iconTargetSize = 0;
@@ -770,7 +758,7 @@ namespace {
     using SecondaryActivateCallback = std::function<void(std::size_t, float, float)>;
 
     LauncherSectionRow(
-        LauncherListStyle style, AsyncTextureCache* asyncTextures, SelectCallback onSelect, ActivateCallback onActivate,
+        LauncherListStyle style, SelectCallback onSelect, ActivateCallback onActivate,
         SecondaryActivateCallback onSecondaryActivate
     )
         : m_style(style), m_onSelect(std::move(onSelect)), m_onActivate(std::move(onActivate)),
@@ -839,10 +827,10 @@ namespace {
           return (*m_results)[resultIndex].origin;
         });
 
-        auto tile = std::make_unique<LauncherAppGridTile>(m_style, asyncTextures);
+        auto tile = std::make_unique<LauncherAppGridTile>(m_style);
         m_tiles[slot] = tile.get();
         area->addChild(std::move(tile));
-        auto listRow = std::make_unique<LauncherResultRow>(m_style, asyncTextures);
+        auto listRow = std::make_unique<LauncherResultRow>(m_style);
         listRow->setVisible(false);
         m_listRows[slot] = listRow.get();
         area->addChild(std::move(listRow));
@@ -955,7 +943,7 @@ public:
   using SecondaryActivateCallback = std::function<void(std::size_t, float, float)>;
   using ReorderCallback = std::function<void(std::size_t, std::size_t)>;
 
-  LauncherResultAdapter(LauncherListStyle style, AsyncTextureCache* cache) : m_style(style), m_cache(cache) {}
+  explicit LauncherResultAdapter(LauncherListStyle style) : m_style(style) {}
 
   void setListStyle(LauncherListStyle style) { m_style = style; }
   void setResults(const std::vector<LauncherResult>* results) { m_results = results; }
@@ -973,9 +961,7 @@ public:
 
   std::size_t itemCount() const override { return m_results == nullptr ? 0U : m_results->size(); }
 
-  [[nodiscard]] std::unique_ptr<Node> createTile() override {
-    return std::make_unique<LauncherResultRow>(m_style, m_cache);
-  }
+  [[nodiscard]] std::unique_ptr<Node> createTile() override { return std::make_unique<LauncherResultRow>(m_style); }
 
   void bindTile(Node& tile, std::size_t index, bool selected, bool hovered) override {
     if (m_renderer == nullptr || m_results == nullptr || index >= m_results->size()) {
@@ -1089,7 +1075,6 @@ private:
   }
 
   LauncherListStyle m_style{};
-  AsyncTextureCache* m_cache = nullptr;
   Renderer* m_renderer = nullptr;
   const std::vector<LauncherResult>* m_results = nullptr;
   ActivateCallback m_onActivate;
@@ -1107,7 +1092,7 @@ public:
   using SecondaryActivateCallback = std::function<void(std::size_t, float, float)>;
   using ReorderCallback = std::function<void(std::size_t, std::size_t)>;
 
-  LauncherAppGridAdapter(LauncherListStyle style, AsyncTextureCache* cache) : m_style(style), m_cache(cache) {}
+  explicit LauncherAppGridAdapter(LauncherListStyle style) : m_style(style) {}
 
   void setListStyle(LauncherListStyle style) { m_style = style; }
   void setResults(const std::vector<LauncherResult>* results) { m_results = results; }
@@ -1125,9 +1110,7 @@ public:
 
   std::size_t itemCount() const override { return m_results == nullptr ? 0U : m_results->size(); }
 
-  [[nodiscard]] std::unique_ptr<Node> createTile() override {
-    return std::make_unique<LauncherAppGridTile>(m_style, m_cache);
-  }
+  [[nodiscard]] std::unique_ptr<Node> createTile() override { return std::make_unique<LauncherAppGridTile>(m_style); }
 
   void bindTile(Node& tile, std::size_t index, bool selected, bool hovered) override {
     if (m_renderer == nullptr || m_results == nullptr || index >= m_results->size()) {
@@ -1238,7 +1221,6 @@ private:
   }
 
   LauncherListStyle m_style{};
-  AsyncTextureCache* m_cache = nullptr;
   Renderer* m_renderer = nullptr;
   const std::vector<LauncherResult>* m_results = nullptr;
   ActivateCallback m_onActivate;
@@ -1257,10 +1239,10 @@ public:
   using SecondaryActivateCallback = std::function<void(std::size_t, float, float)>;
 
   LauncherSectionsAdapter(
-      LauncherListStyle style, AsyncTextureCache* cache, SelectCallback onSelect, ActivateCallback onActivate,
+      LauncherListStyle style, SelectCallback onSelect, ActivateCallback onActivate,
       SecondaryActivateCallback onSecondaryActivate
   )
-      : m_style(style), m_cache(cache), m_onSelect(std::move(onSelect)), m_onActivate(std::move(onActivate)),
+      : m_style(style), m_onSelect(std::move(onSelect)), m_onActivate(std::move(onActivate)),
         m_onSecondaryActivate(std::move(onSecondaryActivate)) {}
 
   void setListStyle(LauncherListStyle style) { m_style = style; }
@@ -1430,7 +1412,7 @@ public:
   }
 
   [[nodiscard]] std::unique_ptr<Node> createItem() override {
-    return std::make_unique<LauncherSectionRow>(m_style, m_cache, m_onSelect, m_onActivate, m_onSecondaryActivate);
+    return std::make_unique<LauncherSectionRow>(m_style, m_onSelect, m_onActivate, m_onSecondaryActivate);
   }
 
   void bindItem(Renderer& /*renderer*/, Node& item, std::size_t index, float width, bool /*hovered*/) override {
@@ -1451,7 +1433,6 @@ private:
   };
 
   LauncherListStyle m_style{};
-  AsyncTextureCache* m_cache = nullptr;
   SelectCallback m_onSelect;
   ActivateCallback m_onActivate;
   SecondaryActivateCallback m_onSecondaryActivate;
@@ -1649,7 +1630,8 @@ void LauncherPanel::create() {
                     ? "launcher.browser.options.use-default-order"
                     : "launcher.browser.options.sort-by-frequency"
             ),
-            .radius = Style::scaledRadiusMd(scale),
+            .styleRadius = Style::radiusMd,
+            .styleRadiusScale = scale,
             .width = Style::controlHeightSm * scale,
             .onClick =
                 [this] {
@@ -1675,7 +1657,8 @@ void LauncherPanel::create() {
                 m_config != nullptr && m_config->config().shell.launcher.appGrid ? "launcher.browser.options.show-list"
                                                                                  : "launcher.browser.options.show-grid"
             ),
-            .radius = Style::scaledRadiusMd(scale),
+            .styleRadius = Style::radiusMd,
+            .styleRadiusScale = scale,
             .width = Style::controlHeightSm * scale,
             .onClick =
                 [this] {
@@ -1701,7 +1684,8 @@ void LauncherPanel::create() {
               .variant = ButtonVariant::Ghost,
               .surfaceOpacity = panelCardOpacity(),
               .tooltip = i18n::tr("launcher.browser.actions.settings"),
-              .radius = Style::scaledRadiusMd(scale),
+              .styleRadius = Style::radiusMd,
+              .styleRadiusScale = scale,
               .width = Style::controlHeightSm * scale,
               .onClick = [] { PanelManager::instance().openSettingsWindow(); },
               .configure =
@@ -1728,8 +1712,8 @@ void LauncherPanel::create() {
   });
 
   const LauncherListStyle initialStyle = launcherListStyleFrom(m_config, scale, panelCardOpacity());
-  m_listAdapter = std::make_unique<LauncherResultAdapter>(initialStyle, m_asyncTextures);
-  m_gridAdapter = std::make_unique<LauncherAppGridAdapter>(initialStyle, m_asyncTextures);
+  m_listAdapter = std::make_unique<LauncherResultAdapter>(initialStyle);
+  m_gridAdapter = std::make_unique<LauncherAppGridAdapter>(initialStyle);
   m_listAdapter->setResults(&m_results);
   m_gridAdapter->setResults(&m_results);
   const auto onActivate = [this](std::size_t index) { activateAt(index); };
@@ -1737,8 +1721,7 @@ void LauncherPanel::create() {
     (void)openAppActionsMenu(index, ax, ay);
   };
   m_launcherSectionsAdapter = std::make_unique<LauncherSectionsAdapter>(
-      initialStyle, m_asyncTextures, [this](std::size_t index) { selectResult(index, false); }, onActivate,
-      onSecondaryActivate
+      initialStyle, [this](std::size_t index) { selectResult(index, false); }, onActivate, onSecondaryActivate
   );
   m_launcherSectionsAdapter->setResults(&m_results);
   m_listAdapter->setOnActivate(onActivate);
@@ -1935,7 +1918,8 @@ void LauncherPanel::create() {
               .variant = ButtonVariant::Ghost,
               .surfaceOpacity = panelCardOpacity(),
               .tooltip = i18n::tr("launcher.browser.actions.power"),
-              .radius = Style::scaledRadiusMd(scale),
+              .styleRadius = Style::radiusMd,
+              .styleRadiusScale = scale,
               .width = toolbarSideWidth,
               .onClick = [this] { showSessionActions(); },
               .configure =
@@ -2272,9 +2256,11 @@ void LauncherPanel::syncLauncherAvatar(Renderer& renderer) {
   }
 
   const bool circularAvatar = m_config->config().shell.circularAvatar;
-  m_launcherAvatar->setRadius(
-      circularAvatar ? m_launcherAvatar->width() * 0.5F : Style::scaledRadiusLg(contentScale())
-  );
+  if (circularAvatar) {
+    m_launcherAvatar->setRadius(m_launcherAvatar->width() * 0.5F);
+  } else {
+    m_launcherAvatar->setStyleRadius(Style::radiusLg, contentScale());
+  }
 
   const std::string displayPath = shell::avatarDisplayPath(m_accounts, m_config->config());
   if (displayPath.empty()) {
@@ -2296,10 +2282,10 @@ void LauncherPanel::syncLauncherAvatar(Renderer& renderer) {
     m_launcherAvatarFallback->setParticipatesInLayout(true);
   }
 
+  // Centered square at the avatar's display size, drawn pixel-aligned: any resampling makes it look blurry.
   const int targetSize = static_cast<int>(std::round(kLauncherAvatarSize * contentScale()));
-  const bool ready = m_asyncTextures != nullptr
-      ? m_launcherAvatar->setSourceFileAsync(renderer, *m_asyncTextures, displayPath, targetSize, true)
-      : m_launcherAvatar->setSourceFile(renderer, displayPath, targetSize, true);
+  const bool ready =
+      m_launcherAvatar->setSourceFile(renderer, displayPath, {.targetSize = targetSize, .centerSquareCrop = true});
   if (ready) {
     m_launcherAvatar->setVisible(true);
     m_launcherAvatar->setParticipatesInLayout(true);
