@@ -381,6 +381,8 @@ foreach _p : [
     'protocols/wlr-screencopy-unstable-v1.xml'],
   ['wlr-output-management-unstable-v1',
     'protocols/wlr-output-management-unstable-v1.xml'],
+  ['wlr-output-power-management-unstable-v1',
+    'protocols/wlr-output-power-management-unstable-v1.xml'],
 ]
   _name = _p[0]
   _xml  = _p[1]
@@ -803,6 +805,8 @@ _noctalia_sources = files(
   'src/shell/bar/widgets/clipboard_widget_definition.cpp',
   'src/shell/bar/widgets/clock_widget.cpp',
   'src/shell/bar/widgets/clock_widget_definition.cpp',
+  'src/shell/bar/widgets/color_picker_widget.cpp',
+  'src/shell/bar/widgets/color_picker_widget_definition.cpp',
   'src/shell/bar/widgets/debug_indicator_widget.cpp',
   'src/shell/bar/widgets/idle_inhibitor_widget.cpp',
   'src/shell/bar/widgets/caffeine_widget_definition.cpp',
@@ -886,6 +890,7 @@ _noctalia_sources = files(
   'src/capture/screenshot_service.cpp',
   'src/capture/screenshot_region_gesture.cpp',
   'src/capture/screenshot_region_overlay.cpp',
+  'src/capture/color_picker_overlay.cpp',
   'src/capture/screenshot_region_badge.cpp',
   'src/capture/annotation_document.cpp',
   'src/capture/annotation_raster.cpp',
@@ -955,6 +960,7 @@ _noctalia_sources = files(
   'src/shell/wayland/compositor_globals.cpp',
   'src/shell/wayland/foreign_toplevels.cpp',
   'src/shell/wayland/output_management_globals.cpp',
+  'src/shell/wayland/output_power_globals.cpp',
   'src/shell/wayland/background_effect_globals.cpp',
   'src/shell/wayland/layer_shell.cpp',
   'src/shell/wayland/layer_surface.cpp',
